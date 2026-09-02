@@ -217,26 +217,29 @@ Scope reminder: Chatbot / AI Visualization Copilot is FUTURE PHASE 2. Do not imp
 
 ### P6-001 — Upload API contract (POST /api/datasets)
 
-- [ ] Pydantic schemas for request/response
-- Acceptance: OpenAPI docs generated
+- [x] `app/schemas/dataset.py` (`DatasetResponse`), `app/schemas/project.py` for the minimal project endpoints upload depends on. Also added `POST/GET /api/projects`, `GET /api/projects/:id` (not a numbered phase in the spec but required to scope datasets — organization is derived from the caller's JWT via `get_current_organization_id`, never trusted from the request body).
+- Acceptance: FastAPI auto-generates OpenAPI docs at `/docs`; routes verified via integration tests below
 
 ### P6-002 — File validation (extension, MIME sniff, size limit, structure check)
 
-- [ ] Reject mismatched/malformed files, path traversal safe filenames
+- [x] `app/data/upload_validation.py`: extension whitelist (csv/tsv/json/xlsx/xls), libmagic content sniffing cross-checked against extension (defeats extension spoofing — e.g. a `.csv` containing PNG magic bytes is rejected), size limit from `MAX_UPLOAD_SIZE_MB`. Path-traversal-safe object keys via `StorageService.build_object_key` (Phase 5). "Structure check" (does the CSV actually parse) deferred to ingestion (Phase 7) — upload-time validation only confirms file type, not full parseability.
 - Deps: P6-001
-- Acceptance: unit tests with malformed fixtures
+- Acceptance: `tests/integration/test_dataset_upload_api.py` — 4/4 passing (clean upload, malicious extension rejected, MIME/extension mismatch rejected, cross-org project access rejected with 404)
 
 ### P6-003 — Frontend upload UI (drag-drop, progress, validation feedback)
 
-- [ ] Component with Framer Motion progress states
+- [ ] Not started
 - Deps: P6-001
 - Acceptance: manual browser test with clean.csv
 
 ### P6-004 — Upload → object storage → dataset record pipeline
 
-- [ ] Wire upload endpoint to storage + DB
+- [x] `POST /api/datasets` validates, uploads to MinIO/S3 raw bucket, creates `Dataset` row (status `uploading`). Ingestion (Parquet conversion, `DatasetVersion` creation) is Phase 7 — not yet wired, so status never advances past `uploading` today.
 - Deps: P5-*, P6-002, P4-004
-- Acceptance: integration test creates dataset row + object
+- Acceptance: integration test creates dataset row + object — verified against live Postgres + MinIO, then torn down
+
+### Test fixtures added this session
+- [x] `tests/fixtures/clean.csv`, `messy.csv` (inconsistent headers/dates/casing/duplicates/missing values), `malformed.csv` (broken quoting, ragged row). Still need: `large.csv`, `dates.csv`, `categorical.csv`, `geographic.csv`, `financial.csv` — add when Phase 7/8 (ingestion/profiling) need them.
 
 ---
 

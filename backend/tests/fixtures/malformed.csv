@@ -1,0 +1,4 @@
+date,region,product,revenue
+2024-01-01,North,"Widget,2400
+2024-01-02,South,Gadget,"1,200
+this,is,not,a,valid,row,at,all,too,many,columns

@@ -1,0 +1,8 @@
+Date ,Region,Product Name,Revenue ($),Units,Notes
+01/02/2024,north,Widget,"$1,200.50",12,
+2024-01-03,South ,Widget,980,9,ok
+Jan 4 2024,North,Gadget,2150.75,twenty,bad units
+,East,Widget,760.25,7,missing date
+2024-01-05,west,Gadget,,28,missing revenue
+2024-01-06,South,gadget,1425.60,13,
+2024-01-06,South,gadget,1425.60,13,duplicate row
