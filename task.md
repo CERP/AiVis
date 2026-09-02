@@ -406,43 +406,49 @@ Scope reminder: Chatbot / AI Visualization Copilot is FUTURE PHASE 2. Do not imp
 
 ### P12-001 — Trend detection
 
-- [ ] Deps: P8-*, P7-3
-- Acceptance: unit test on synthetic time series
+- [x] `app/insights/detectors.py::detect_trend` — first-to-last % change over a sorted date+numeric pair, needs ≥3 rows. Confidence scales with sample size (0.7 below 10 rows, 0.9 at/above).
+- Deps: P8-*, P7-3
+- Acceptance: unit test on synthetic time series — `test_detect_trend_increasing` (exact 50% delta asserted), `test_detect_trend_returns_none_for_too_few_rows`
 
 ### P12-002 — Change/comparison detection
 
-- [ ] Acceptance: unit test
+- [~] Not a separate detector — `detect_trend`'s delta framing ("increased/decreased X%") covers the simple two-point comparison case described in the spec example. A distinct "margin decreased despite revenue increasing" cross-metric comparison detector is not built — flagged as a gap for a future session.
 
 ### P12-003 — Outlier/anomaly detection
 
-- [ ] Acceptance: unit test
+- [x] `detect_outliers` — IQR-based (1.5×IQR bounds, same method as the profiler's outlier count so the numbers stay consistent), returns up to 10 actual outlier values as calculation evidence. "Anomaly" (time-series-aware, distinct from a plain statistical outlier) not separately implemented — datasets this small don't have enough temporal density to distinguish the two meaningfully yet.
+- Acceptance: unit test — `test_detect_outliers_finds_extreme_value`, `test_detect_outliers_returns_none_when_no_outliers`
 
 ### P12-004 — Relationship/correlation detection
 
-- [ ] Acceptance: unit test
+- [x] `detect_relationship` — Pearson correlation between numeric-column pairs, only surfaced above `|r|>=0.5` (moderate) with strong/moderate + positive/negative framing. Confidence = `min(0.95, |r|)`.
+- Acceptance: unit test — `test_detect_relationship_finds_strong_positive_correlation` (r=1.0 exact linear relationship), `test_detect_relationship_returns_none_for_weak_correlation`
 
 ### P12-005 — Ranking detection
 
-- [ ] Acceptance: unit test
+- [x] `detect_ranking` — sum-by-category, requires 2-50 distinct categories (below 2 is meaningless, above 50 isn't a "ranking" a reader can act on). Reports the leader's share of the total.
+- Acceptance: unit test — `test_detect_ranking_finds_top_category`, `test_detect_ranking_returns_none_for_single_category`
 
 ### P12-006 — Distribution summary
 
-- [ ] Acceptance: unit test
+- [x] `detect_distribution` — IQR-based "most values fall between X and Y" framing plus median.
+- Acceptance: unit test — `test_detect_distribution_reports_iqr`
 
 ### P12-007 — Seasonality detection (where applicable)
 
-- [ ] Acceptance: unit test
+- [ ] Not implemented. Every fixture dataset so far has ≤8 rows spanning ≤8 days — nowhere near enough temporal density for a real seasonality test (would need autocorrelation or STL decomposition over weeks/months of data). Needs a proper `dates.csv`-style long-time-series fixture before this can be built and honestly tested; building it against toy data would risk exactly the "hallucinated conclusion" the spec explicitly warns against.
 
 ### P12-008 — Insight persistence + field/calculation provenance (`insights` table)
 
-- [ ] Every insight references source fields + calc
+- [x] `app/services/insight_analysis.py::analyze_dataset_version` — loads the latest version's Parquet, runs `app/insights/engine.py::generate_insights` (dispatches detectors by column semantic type: numeric → outlier/distribution, date×numeric → trend, categorical×numeric → ranking, numeric×numeric → relationship), persists each `InsightCandidate` as an `Insight` row with `fields`/`calculation` intact.
 - Deps: P12-001..007, P4-004
-- Acceptance: insight rows link back to columns
+- Acceptance: insight rows link back to columns — verified: every insight in the API response carries non-empty `fields` and `calculation`, asserted in `test_analyze_produces_grounded_insights`
 
 ### P12-009 — API: `GET/POST /api/datasets/:id/insights[/analyze]`
 
-- [ ] Deps: P12-008
-- Acceptance: endpoint tests
+- [x] `POST /api/datasets/:id/insights/analyze` runs the engine and persists results (409 if not ready); `GET /api/datasets/:id/insights` lists persisted insights for the latest version, ranked by confidence.
+- Deps: P12-008
+- Acceptance: endpoint tests — `tests/integration/test_insights_api.py`, 2/2 passing. Verified live against `clean.csv`: correctly found revenue↑83.3%, units↑75%, Gadget leads both revenue and units, revenue/units r=0.998 (strong positive). 49/49 total backend tests passing.
 
 ---
 
