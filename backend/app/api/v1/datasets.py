@@ -21,12 +21,14 @@ from app.schemas.cleaning import CleaningRequest, CleaningResponse
 from app.schemas.dataset import DatasetResponse
 from app.schemas.insight import InsightResponse
 from app.schemas.profile import ColumnProfileResponse, DatasetProfileResponse
+from app.schemas.recommendation import RecommendationsResponse, VisualizationRecommendationResponse
 from app.schemas.story import StoryResponse
 from app.services.cleaning import CleaningError, apply_cleaning_operation
 from app.services.ingestion import ingest_dataset
 from app.services.insight_analysis import analyze_dataset_version
 from app.services.storage import get_storage_service
 from app.services.story_analysis import generate_stories_for_version
+from app.visualization.recommendation import generate_recommendations, split_top_and_derived
 
 router = APIRouter(prefix="/datasets", tags=["datasets"])
 
@@ -318,6 +320,42 @@ async def list_stories(
         return []
 
     return await StoryRepository(session).list_for_version(version.id)
+
+
+@router.get(
+    "/{dataset_id}/visualizations/recommendations", response_model=RecommendationsResponse
+)
+async def get_visualization_recommendations(
+    dataset_id: uuid.UUID,
+    organization_id: uuid.UUID = Depends(get_current_organization_id),
+    session: AsyncSession = Depends(get_session),
+) -> RecommendationsResponse:
+    dataset = await DatasetRepository(session).get(dataset_id)
+    if dataset is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Dataset not found")
+    await _require_project(dataset.project_id, organization_id, session)
+
+    version = await DatasetVersionRepository(session).get_latest(dataset_id)
+    if version is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No dataset version")
+
+    stories = await StoryRepository(session).list_for_version(version.id)
+    if not stories:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="No stories found; run /insights/analyze then /stories/analyze first",
+        )
+
+    columns = await DatasetColumnRepository(session).list_for_version(version.id)
+    semantic_types = {c.name: c.semantic_type for c in columns if c.semantic_type}
+
+    recommendations = generate_recommendations(stories, semantic_types, str(version.id))
+    top, derived = split_top_and_derived(recommendations)
+
+    return RecommendationsResponse(
+        top=[VisualizationRecommendationResponse(**r.__dict__) for r in top],
+        derived=[VisualizationRecommendationResponse(**r.__dict__) for r in derived],
+    )
 
 
 @router.delete("/{dataset_id}", status_code=status.HTTP_204_NO_CONTENT)
