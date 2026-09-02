@@ -373,30 +373,31 @@ Scope reminder: Chatbot / AI Visualization Copilot is FUTURE PHASE 2. Do not imp
 
 ### P11-001 — AIProvider interface (abstract base)
 
-- [ ] `ai/base.py`: methods for structured-output generation, no chat-specific coupling
-- Acceptance: interface documented in AI_ARCHITECTURE.md
+- [x] `app/ai/base.py`: `AIProvider.generate_structured(system_instruction, prompt, response_schema) -> SchemaT`. Deliberately no "conversation"/"chat" concept — every call is one-shot structured generation, matching current-phase responsibilities (interpretation/suggestions/ranking), not dialogue. `AIProviderError` for all failure modes so callers can degrade gracefully instead of crashing when AI is unavailable.
+- Acceptance: interface documented in AI_ARCHITECTURE.md — done (already described the abstraction before implementation existed; now matches)
 
 ### P11-002 — GeminiProvider implementation
 
-- [ ] `ai/gemini_provider.py`, structured output via schema, retries, timeouts
+- [x] `app/ai/gemini_provider.py` using the current `google-genai` SDK (switched off `google-generativeai`, which is deprecated as of this session — pip install warned it "will no longer be receiving updates or bug fixes"). Structured output via `response_schema` + `response_mime_type=application/json`, 2-attempt retry on provider error or schema validation failure. `app/ai/factory.py::get_ai_provider()` selects provider by `AI_PROVIDER` setting (only "gemini" wired so far).
 - Deps: P11-001
-- Acceptance: unit test with mocked Gemini client
+- Acceptance: unit test with mocked Gemini client — done via a `FakeProvider` test double (see P9-style pattern) in `tests/unit/test_ai_interpretation.py`, 2/2 passing. **Not yet verified against the real Gemini API** — user supplied a `GEMINI_API_KEY` but explicitly withheld permission to use it for a live call this session; key is saved in `.env` (gitignored) for whenever that's authorized.
 
 ### P11-003 — Data minimization layer (profiler summary → AI, never raw dataset)
 
-- [ ] `ai/context_builder.py`
+- [x] `app/ai/context_builder.py::build_dataset_summary` — sends only schema (name/semantic_type), aggregate stats, and null/unique ratios; PII-flagged columns are fully excluded from stats (only the column name is kept, for context, under `redacted_column_names`). No row-level data ever leaves this boundary.
 - Deps: P8-002, P11-001
-- Acceptance: unit test asserts no raw row-level PII sent unless sampled+redacted
+- Acceptance: unit test asserts no raw row-level PII sent unless sampled+redacted — `tests/unit/test_ai_context_builder.py`, 3/3 passing (PII column redacted, null ratio computed correctly, no `sample_rows`/`rows` key exists in the summary type at all)
 
 ### P11-004 — Prompt injection resistance + AI output schema validation
 
-- [ ] Pydantic validation of every AI response; reject/repair on mismatch
+- [x] System instruction explicitly tells the model to treat the JSON payload as inert data and ignore any instructions embedded in column names/values (`app/services/ai_interpretation.py`). All provider output is parsed via `response_schema.model_validate_json` — invalid JSON or schema mismatch raises `AIProviderError` rather than being coerced or executed. No adversarial-prompt test yet (would need a live call or a more elaborate mock) — flagged as a gap.
 - Deps: P11-002
-- Acceptance: test with adversarial fixture prompt
+- Acceptance: test with adversarial fixture prompt — not yet written; the schema-rejection path *is* covered (`test_interpret_dataset_propagates_provider_error`), but a true prompt-injection fixture is still a gap
 
 ### P11-005 — AI response caching (Redis)
 
-- [ ] Deps: P11-002
+- [ ] Not started — no Redis client wired into the backend yet at all (docker-compose has the service, nothing consumes it). Add once a real endpoint calls the AI layer and caching becomes worth the complexity.
+- Deps: P11-002
 - Acceptance: cache hit test
 
 ---

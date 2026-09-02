@@ -16,7 +16,7 @@ boto3
 python-multipart
 bcrypt
 python-jose[cryptography]
-google-generativeai
+google-genai
 httpx
 python-magic
 orjson
