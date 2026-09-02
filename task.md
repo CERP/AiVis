@@ -592,13 +592,17 @@ Scope reminder: Chatbot / AI Visualization Copilot is FUTURE PHASE 2. Do not imp
 
 - [x] `frontend/src/components/recommendations/recommendation-card.tsx` — chart-type glyph header, title, confidence badge, chart-type label, analytical question, explanation, why-recommended note. **Gap:** no live mini-chart preview (spec says "visualization preview") — the recommendation API response only carries the `VisualizationSpec`, not row data, so there's nothing to render yet; would need either a new preview-rows endpoint or reusing `/profile` sample data. Using a static chart-type glyph as a placeholder instead of guessing at fabricated preview data.
 - Deps: P17-005, P16-*
-- Acceptance: renders 8 cards from API data — **rendered from data shaped exactly like the real API response, not a live fetch** (frontend auth/Phase 3-003 doesn't exist yet, so there's no way to get a token in the browser). Verified live at `/recommendations-preview`: 3 top + 1 derived card render correctly, confidence badges show 70%/95%/85%/75%, chart-type labels correct.
+- Acceptance: renders 8 cards from API data — originally verified with mock-shaped data only (frontend auth didn't exist yet); **now superseded**: `frontend/src/app/datasets/[datasetId]/page.tsx` wires this card to the real live pipeline (see new note below), verified against a real uploaded dataset end-to-end.
 
 ### P18-002 — "8 ways to see your data" screen layout + Framer Motion entrance
 
 - [x] `frontend/src/app/recommendations-preview/page.tsx` — responsive grid (`grid-cols-1 sm:grid-cols-2 lg:grid-cols-3`), "Explore more" section for the derived pool, staggered Framer Motion entrance (`delay: index * 0.06`) on each card.
 - Deps: P18-001
 - Acceptance: manual browser test desktop+mobile — verified live at both 450px (single column, confirmed via screenshot) and 1280px (3-column grid, confirmed via screenshot + bounding-box math for centering). `prefers-reduced-motion` handled globally via the CSS rule in `globals.css` (Phase 2), not per-component — not re-verified against this specific animation this session.
+
+### Live-wired dataset detail page (closes the P18 mock-data gap)
+- [x] `frontend/src/app/datasets/[datasetId]/page.tsx` — fetches the real profile, shows a "Discover insights" button (explicit user action rather than auto-triggering on mount, since `insights/analyze` and `stories/analyze` both create new rows on every call and React's dev-mode double-invoke would otherwise duplicate them), then on click runs insights→stories→recommendations sequentially and renders the *real* `RecommendationCard` grid from the live API response.
+- Acceptance: **verified fully live end-to-end** with backend+Postgres+MinIO+frontend running together: signed up, created a project, uploaded an 8-row CSV (via synthetic `DataTransfer`, same code path as a real file pick), landed on the dataset page showing correct profile (8 rows, 5 columns, correct semantic types per column), clicked "Discover insights," and got 7 correctly-ranked recommendation cards (95%-confidence revenue/units relationship first, down to 70%-confidence trends) — the exact same numbers already proven correct by the backend integration tests, now confirmed reachable through the actual UI. Zero console errors.
 
 ---
 
