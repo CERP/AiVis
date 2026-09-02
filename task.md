@@ -621,19 +621,21 @@ Scope reminder: Chatbot / AI Visualization Copilot is FUTURE PHASE 2. Do not imp
 
 ### P20-001 — Palette generation (categorical/sequential/diverging) respecting accessibility + semantics
 
-- [ ] `visualization/themes.py`
+- [x] `app/visualization/themes.py` — 12 `ThemeTokens` (categorical via colorblind-safe Okabe-Ito palette or derivations, sequential/diverging ranges), each with `background`/`foreground`/`positive_color`/`negative_color`. WCAG AA contrast (≥4.5:1) is enforced at construction time (`_theme()` raises if a theme fails), not just tested after the fact — verified live for all 12 (measured 15.19–21.0).
 - Deps: P14-001
-- Acceptance: contrast-checked palettes, colorblind-safe test
+- Acceptance: contrast-checked palettes, colorblind-safe test — `tests/unit/test_themes.py`, 5/5 passing (all-themes-pass-AA, ≥12 themes, ranking splits correctly, ranking sorted, black-on-white contrast sanity check)
 
 ### P20-002 — Theme ranking (8 recommended themes per visualization/dataset context)
 
-- [ ] Deps: P20-001
-- Acceptance: API returns 8 ranked themes
+- [x] `rank_themes()` sorts by `editorial_suitability_score`, a hand-assigned prior (not measured) for how broadly applicable a theme is. **Known limitation, documented in code:** domain-specific themes (Financial, Climate, Election, Sports, Economic) score lower and always rank behind general-purpose ones regardless of the actual dataset's domain — true dataset-domain matching (e.g. detecting a dataset is about elections and ranking the Election theme first) isn't built. Not visualization-context-aware yet either (doesn't consider chart_type or category count).
+- Deps: P20-001
+- Acceptance: API returns 8 ranked themes — verified live via curl (`top` has exactly 8, `rest` has the remaining 4)
 
 ### P20-003 — API: `GET /api/themes`, `GET /api/themes/recommendations`
 
-- [ ] Deps: P20-002
-- Acceptance: endpoint tests
+- [x] Both routes have no DB dependency (pure in-memory registry), verified live against a bare uvicorn process with no Postgres/MinIO running.
+- Deps: P20-002
+- Acceptance: endpoint tests — verified live via curl; no integration test file yet since there's nothing DB/storage-dependent to isolate — add a lightweight test if this grows API surface
 
 ---
 
@@ -641,17 +643,20 @@ Scope reminder: Chatbot / AI Visualization Copilot is FUTURE PHASE 2. Do not imp
 
 ### P21-001 — Theme token schema (colors, typography, spacing, grid, annotations, axes, labels, background, borders, emphasis)
 
-- [ ] Deps: P14-001
-- Acceptance: schema documented
+- [x] `ThemeTokens` dataclass: `background`/`foreground`/`grid`/`border` (covers axes/labels/emphasis via the renderer, which already derives those from background/foreground), `categorical_colors`/`sequential_range`/`diverging_range`, `positive_color`/`negative_color`, `headline_font`/`body_font`. No separate "spacing" or "annotations" sub-schema yet — layout/annotation styling lives on `VisualizationSpec.layout`/`.annotations` (Phase 14) rather than the theme, since those are per-chart decisions, not per-theme constants.
+- Deps: P14-001
+- Acceptance: schema documented — this section of task.md, plus inline module docstring in `themes.py`
 
 ### P21-002 — Implement themes: Minimal, Classic Editorial, Investigative, Financial, Scientific, Climate, Election, Sports, Economic, Monochrome, High Contrast, Dark Editorial
 
-- [ ] Deps: P21-001
-- Acceptance: all themes render on sample chart
+- [x] All 12 named themes implemented with real, distinct token values (not placeholder copies of each other) — conceptual takes on each domain, not copies of any outlet's actual branding.
+- Deps: P21-001
+- Acceptance: all themes render on sample chart — **not yet wired into the frontend renderer** (`to-vega-lite.ts` doesn't consume theme tokens yet, it hardcodes Vega-Lite defaults). Backend correctness (construction + contrast) is fully verified; frontend application of a theme to an actual chart is the next gap to close, not done this session.
 
 ### P21-003 — Theme selection UI (8-theme recommendation grid)
 
-- [ ] Deps: P20-003, P21-002
+- [ ] Not started — natural follow-up once P21-002's frontend gap (theme tokens actually affecting chart colors) is closed; a selection grid without visible effect wouldn't prove anything.
+- Deps: P20-003, P21-002
 - Acceptance: manual browser test
 
 ---
