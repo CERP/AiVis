@@ -155,14 +155,14 @@ Scope reminder: Chatbot / AI Visualization Copilot is FUTURE PHASE 2. Do not imp
 
 ### P3-003 — Frontend auth flow (login/signup pages, session state)
 
-- [ ] Not started
+- [x] `frontend/src/app/login/page.tsx`, `frontend/src/app/signup/page.tsx` — TanStack Query mutations against the real `/api/auth/{login,signup}` endpoints. Session state via `frontend/src/store/auth-store.ts` (Zustand + `persist` to localStorage). `frontend/src/lib/api/client.ts` attaches the bearer token to every request automatically.
 - Deps: P3-002
-- Acceptance: manual login works in browser
+- Acceptance: manual login works in browser — **verified live end-to-end**: ran backend+Postgres+MinIO+frontend together, signed up a real account through the browser (`browsertest@example.com`), confirmed `POST /api/auth/signup` → 201 in the network log, redirect to `/projects`, and a real `GET /api/projects` → 200 rendering the "No projects yet" empty state.
 
 ### P3-004 — Route protection (frontend middleware, backend dependency)
 
-- [~] Backend: `app/api/deps.py::get_current_user` (HTTPBearer + JWT decode) — done, verified. Frontend middleware not started.
-- Acceptance: unauthenticated access blocked — verified for backend (`/api/auth/me` returns 401 without token)
+- [x] Backend: `app/api/deps.py::get_current_user` (HTTPBearer + JWT decode) — done, verified (Phase 3-002). Frontend: `frontend/src/middleware.ts` gates `/projects`, `/datasets`, `/studio` behind a non-httpOnly `aivis_auth_present` cookie mirrored by the auth store on login/signup — **this only proves a token is present, not that it's valid**; real authorization still happens server-side on every API call. Documented as a UX redirect, not the security boundary.
+- Acceptance: unauthenticated access blocked — verified for backend (`/api/auth/me` returns 401 without token) **and now for frontend**: visiting `/projects` with no auth cookie live-redirected to `/login?next=%2Fprojects` in the browser, confirmed via `window.location.pathname`.
 
 ---
 
