@@ -228,9 +228,9 @@ Scope reminder: Chatbot / AI Visualization Copilot is FUTURE PHASE 2. Do not imp
 
 ### P6-003 — Frontend upload UI (drag-drop, progress, validation feedback)
 
-- [ ] Not started
+- [~] `frontend/src/app/projects/[projectId]/page.tsx` — click-to-upload via a hidden file input (accepts .csv/.tsv/.json/.xlsx/.xls), dataset list with a status pill (Uploading/Processing/Analyzing/Ready/Failed) that polls every 1.5s while a dataset is mid-pipeline, error message shown inline on upload failure. **Gap:** no drag-drop yet, just click-to-browse — flagged for a follow-up, not a blocker for the golden path.
 - Deps: P6-001
-- Acceptance: manual browser test with clean.csv
+- Acceptance: manual browser test with clean.csv — **verified live end-to-end**: ran backend+Postgres+MinIO+frontend together, signed up, created a project through the UI, uploaded clean.csv (simulated file selection via a synthetic DataTransfer since cross-tool real filesystem access to the preview browser wasn't available — same code path as a real pick, `POST /api/datasets` → 201), and confirmed the dataset appears in the list as a clickable "clean.csv" link with status "Ready" and correct size, via accessibility snapshot.
 
 ### P6-004 — Upload → object storage → dataset record pipeline
 
