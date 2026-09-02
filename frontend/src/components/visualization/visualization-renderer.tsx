@@ -4,15 +4,22 @@ import { useEffect, useRef, useState } from "react";
 
 import { compileToVegaLite } from "@/lib/visualization/to-vega-lite";
 import type { VisualizationSpec } from "@/lib/visualization/spec";
+import type { ThemeTokens } from "@/lib/api/theme";
 import { cn } from "@/lib/utils";
 
 interface VisualizationRendererProps {
   spec: VisualizationSpec;
   rows: Record<string, unknown>[];
+  theme?: ThemeTokens;
   className?: string;
 }
 
-export function VisualizationRenderer({ spec, rows, className }: VisualizationRendererProps) {
+export function VisualizationRenderer({
+  spec,
+  rows,
+  theme,
+  className,
+}: VisualizationRendererProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -24,7 +31,7 @@ export function VisualizationRenderer({ spec, rows, className }: VisualizationRe
       if (!containerRef.current) return;
       try {
         const vegaEmbed = (await import("vega-embed")).default;
-        const vlSpec = compileToVegaLite(spec, rows);
+        const vlSpec = compileToVegaLite(spec, rows, theme);
         const result = await vegaEmbed(containerRef.current, vlSpec, {
           actions: false,
           renderer: "svg",
@@ -48,7 +55,7 @@ export function VisualizationRenderer({ spec, rows, className }: VisualizationRe
       cancelled = true;
       cleanup?.();
     };
-  }, [spec, rows]);
+  }, [spec, rows, theme]);
 
   if (error) {
     return (

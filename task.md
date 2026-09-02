@@ -649,14 +649,15 @@ Scope reminder: Chatbot / AI Visualization Copilot is FUTURE PHASE 2. Do not imp
 
 ### P21-002 — Implement themes: Minimal, Classic Editorial, Investigative, Financial, Scientific, Climate, Election, Sports, Economic, Monochrome, High Contrast, Dark Editorial
 
-- [x] All 12 named themes implemented with real, distinct token values (not placeholder copies of each other) — conceptual takes on each domain, not copies of any outlet's actual branding.
+- [x] All 12 named themes implemented with real, distinct token values (not placeholder copies of each other) — conceptual takes on each domain, not copies of any outlet's actual branding. **Frontend gap closed same session:** `to-vega-lite.ts::compileToVegaLite` now takes an optional `ThemeTokens` and sets Vega-Lite's `background`, `config.axis.{gridColor,domainColor,labelColor,titleColor}`, `config.title.color`, `config.range.category` (switches between categorical/sequential/diverging based on `palette_type`), and the mark's default color when no explicit color encoding exists. `VisualizationRenderer` threads the theme prop through.
 - Deps: P21-001
-- Acceptance: all themes render on sample chart — **not yet wired into the frontend renderer** (`to-vega-lite.ts` doesn't consume theme tokens yet, it hardcodes Vega-Lite defaults). Backend correctness (construction + contrast) is fully verified; frontend application of a theme to an actual chart is the next gap to close, not done this session.
+- Acceptance: all themes render on sample chart — **verified live**: fetched all 12 real themes from `GET /api/themes/recommendations` (no DB needed) at `/theme-preview`, clicked between them, and confirmed via direct SVG `fill` attribute inspection (not just eyeballing a screenshot, which was intermittently flaky in this session) that the rendered mark color changed exactly to match the selected theme's token — `#E69F00` (minimal, default Okabe-Ito) → `#e0673f` (dark_editorial) confirmed by inspecting the actual `<path fill="...">` in the DOM.
 
 ### P21-003 — Theme selection UI (8-theme recommendation grid)
 
-- [ ] Not started — natural follow-up once P21-002's frontend gap (theme tokens actually affecting chart colors) is closed; a selection grid without visible effect wouldn't prove anything.
+- [x] `frontend/src/app/theme-preview/page.tsx` — pill-button grid of all 12 themes (color swatch + name), selecting one re-renders the live chart with that theme's tokens. Shows all 12, not just top-8 (both `top` and `rest` from the recommendations response), since seeing every option was more useful for this verification screen than pre-filtering — a dedicated "recommended 8" grid can reuse the same component once it has a real place to live (e.g. inside the studio).
 - Deps: P20-003, P21-002
+- Acceptance: manual browser test — verified live as described above
 - Acceptance: manual browser test
 
 ---

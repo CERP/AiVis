@@ -1,5 +1,7 @@
 import type { TopLevelSpec } from "vega-lite";
 
+import type { ThemeTokens } from "@/lib/api/theme";
+
 import type { Encoding, VisualizationSpec } from "./spec";
 
 /**
@@ -41,9 +43,16 @@ function compileEncoding(encoding: Encoding | null | undefined): Record<string, 
   };
 }
 
+function rangeForPaletteType(theme: ThemeTokens): string[] {
+  if (theme.palette_type === "sequential") return theme.sequential_range;
+  if (theme.palette_type === "diverging") return theme.diverging_range;
+  return theme.categorical_colors;
+}
+
 export function compileToVegaLite(
   spec: VisualizationSpec,
-  rows: Record<string, unknown>[]
+  rows: Record<string, unknown>[],
+  theme?: ThemeTokens
 ): TopLevelSpec {
   const mark = CHART_TYPE_TO_MARK[spec.chart_type] ?? "bar";
 
@@ -63,17 +72,30 @@ export function compileToVegaLite(
     if (size) encoding.size = size;
   }
 
+  const markColor = theme?.categorical_colors[0];
+  const markConfig =
+    spec.chart_type === "donut" ? { type: mark, innerRadius: 60 } : { type: mark };
+
   return {
     $schema: "https://vega.github.io/schema/vega-lite/v6.json",
     data: { values: rows },
-    mark: spec.chart_type === "donut" ? { type: mark, innerRadius: 60 } : mark,
+    mark: markColor && !color ? { ...markConfig, color: markColor } : markConfig,
     encoding,
     width: spec.layout.width ?? "container",
     height: spec.layout.height ?? 320,
     title: spec.typography.title ?? undefined,
+    background: theme?.background,
     config: {
       legend: { disable: !spec.layout.show_legend },
-      axis: { grid: spec.layout.show_grid },
+      axis: {
+        grid: spec.layout.show_grid,
+        gridColor: theme?.grid,
+        domainColor: theme?.border,
+        labelColor: theme?.foreground,
+        titleColor: theme?.foreground,
+      },
+      title: { color: theme?.foreground, font: theme?.headline_font },
+      range: theme ? { category: rangeForPaletteType(theme) } : undefined,
     },
   } as TopLevelSpec;
 }
