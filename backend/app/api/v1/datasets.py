@@ -15,16 +15,18 @@ from app.repositories.dataset import (
     DatasetRepository,
     DatasetVersionRepository,
 )
-from app.repositories.insight import InsightRepository
+from app.repositories.insight import InsightRepository, StoryRepository
 from app.repositories.project import ProjectRepository
 from app.schemas.cleaning import CleaningRequest, CleaningResponse
 from app.schemas.dataset import DatasetResponse
 from app.schemas.insight import InsightResponse
 from app.schemas.profile import ColumnProfileResponse, DatasetProfileResponse
+from app.schemas.story import StoryResponse
 from app.services.cleaning import CleaningError, apply_cleaning_operation
 from app.services.ingestion import ingest_dataset
 from app.services.insight_analysis import analyze_dataset_version
 from app.services.storage import get_storage_service
+from app.services.story_analysis import generate_stories_for_version
 
 router = APIRouter(prefix="/datasets", tags=["datasets"])
 
@@ -262,6 +264,60 @@ async def list_insights(
         return []
 
     return await InsightRepository(session).list_for_version(version.id)
+
+
+@router.post(
+    "/{dataset_id}/stories/analyze",
+    response_model=list[StoryResponse],
+    status_code=status.HTTP_201_CREATED,
+)
+async def analyze_stories(
+    dataset_id: uuid.UUID,
+    organization_id: uuid.UUID = Depends(get_current_organization_id),
+    session: AsyncSession = Depends(get_session),
+) -> list[StoryResponse]:
+    dataset = await DatasetRepository(session).get(dataset_id)
+    if dataset is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Dataset not found")
+    await _require_project(dataset.project_id, organization_id, session)
+
+    if dataset.status != DatasetStatus.READY:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"Dataset is not ready (status={dataset.status})",
+        )
+
+    version = await DatasetVersionRepository(session).get_latest(dataset_id)
+    if version is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No dataset version")
+
+    existing_insights = await InsightRepository(session).list_for_version(version.id)
+    if not existing_insights:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="No insights found; run /insights/analyze first",
+        )
+
+    stories = await generate_stories_for_version(session, version)
+    return stories
+
+
+@router.get("/{dataset_id}/stories", response_model=list[StoryResponse])
+async def list_stories(
+    dataset_id: uuid.UUID,
+    organization_id: uuid.UUID = Depends(get_current_organization_id),
+    session: AsyncSession = Depends(get_session),
+) -> list[StoryResponse]:
+    dataset = await DatasetRepository(session).get(dataset_id)
+    if dataset is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Dataset not found")
+    await _require_project(dataset.project_id, organization_id, session)
+
+    version = await DatasetVersionRepository(session).get_latest(dataset_id)
+    if version is None:
+        return []
+
+    return await StoryRepository(session).list_for_version(version.id)
 
 
 @router.delete("/{dataset_id}", status_code=status.HTTP_204_NO_CONTENT)

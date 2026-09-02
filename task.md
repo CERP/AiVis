@@ -456,18 +456,20 @@ Scope reminder: Chatbot / AI Visualization Copilot is FUTURE PHASE 2. Do not imp
 
 ### P13-001 — Story data model (title, description, question, fields, insight ref, recommended viz, confidence)
 
-- [ ] `stories` table + schema
+- [x] `Story` model already existed (Phase 4); confirmed it fits (title, description, analytical_question, relevant_fields, insight_id FK, recommended_chart_type, confidence) — no migration change needed
 - Deps: P4-001
-- Acceptance: model documented
+- Acceptance: model documented — in ARCHITECTURE.md's entity list
 
 ### P13-002 — Story generation logic (question templates + AI-assisted phrasing over real insights)
 
-- [ ] Deps: P12-*, P11-*
-- Acceptance: generates ≥5 stories on fixture dataset, all field-grounded
+- [x] `app/insights/story_generator.py`: one story per insight, question-template-per-InsightType (e.g. trend → "How did X change over time?", ranking → "Which {category} leads on {measure}?"), chart-type recommendation per insight type (trend→line, ranking→bar, relationship→scatter, outlier→box_plot, distribution→histogram). Deliberately **not** AI-assisted phrasing yet — stayed template-based since Phase 11's AI plumbing exists but hasn't been live-verified; wiring AI-polish onto these templates is a natural follow-up once that's authorized. Every story is derived from an actual persisted Insight, so it can never claim more than the insight already grounded.
+- Deps: P12-*, P11-* (soft dep on P11 — not actually required since templates don't call AI)
+- Acceptance: generates ≥5 stories on fixture dataset, all field-grounded — verified live on clean.csv: 7 insights → 7 stories, 1:1, every story's `relevant_fields` inherited directly from its source insight
 
 ### P13-003 — API: story listing per dataset
 
-- [ ] Acceptance: endpoint test
+- [x] `POST /api/datasets/:id/stories/analyze` (409 if insights haven't been generated yet — stories can't exist without insights), `GET /api/datasets/:id/stories`
+- Acceptance: endpoint test — `tests/integration/test_stories_api.py`, 2/2 passing (409-before-insights, and full analyze→list flow) against live Postgres + MinIO. 56/56 total backend tests passing.
 
 ---
 
