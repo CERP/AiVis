@@ -666,32 +666,38 @@ Scope reminder: Chatbot / AI Visualization Copilot is FUTURE PHASE 2. Do not imp
 
 ### P22-001 — Studio layout shell (toolbar, canvas, properties panel)
 
-- [ ] Deps: P2-006, P15-002
-- Acceptance: renders with placeholder panels
+- [x] `frontend/src/app/studio/[visualizationId]/page.tsx` — two-column layout: canvas (live `VisualizationRenderer`) + a right-hand properties panel (chart type list, theme swatches). No left-hand "tools" rail yet (annotations/shapes from the spec's conceptual layout aren't built — Phase 23 territory) — properties-panel-only is a deliberately smaller shell than the full mockup, not a placeholder.
+- Deps: P2-006, P15-002
+- Acceptance: renders with placeholder panels — superseded by a fully live version (see below), not just placeholders
 
 ### P22-002 — Chart type switch control
 
-- [ ] Deps: P22-001, P14-004
-- Acceptance: mutates spec, new version created
+- [x] Clicking a chart type in the properties panel sends `{type: "change_chart_type", params: {chart_type}}` via `PATCH /api/visualizations/:id`. **Known simplification:** the command only changes `chart_type` — it doesn't re-map encodings for the new chart type (e.g. switching a two-quantitative-field scatter to a bar chart keeps both axes quantitative rather than re-assigning one to a category), so some chart-type switches will look unusual until `change_field` is also wired into the UI (P22-003 gap below).
+- Deps: P22-001, P14-004
+- Acceptance: mutates spec, new version created — **verified live**: opened a real "revenue vs units" scatter recommendation in the studio, switched to Bar chart, confirmed the version counter advanced from 1→2 and the chart type label updated from "scatter" to "bar" in the live UI
 
 ### P22-003 — Data mapping controls (encodings, aggregation)
 
-- [ ] Deps: P22-001
+- [ ] Not started — the backend `change_field`/`change_aggregation` commands exist (Phase 14) and are exercised by backend tests, but no UI control calls them yet. Flagged as the most valuable next studio addition.
+- Deps: P22-001
 - Acceptance: manual test
 
 ### P22-004 — Style controls (colors, typography, spacing, legend, axes, labels, number formats, background, grid, dimensions)
 
-- [ ] Deps: P22-001, P21-*
-- Acceptance: manual test
+- [~] Theme selection (swatch grid, same component pattern as `/theme-preview`) is live and working — clicking a theme changes the rendered chart's colors immediately (client-side only via the `theme` prop, not persisted as a `change_theme` command yet, so it doesn't survive a reload or show up as a new version). Typography/spacing/legend/axis/label/number-format/background/grid controls not built.
+- Deps: P22-001, P21-*
+- Acceptance: manual test — theme-swatch portion verified live (color change confirmed via SVG fill inspection, `#E69F00` → `#111111` for monochrome)
 
 ### P22-005 — Studio state management (Zustand store bound to VisualizationSpec + version history)
 
-- [ ] Deps: P14-003
+- [ ] Not started — state currently lives in TanStack Query (server state) rather than a Zustand client store; "undo" would just mean re-applying an inverse command, and there's no UI for browsing/jumping to a specific past version yet even though `GET /api/visualizations/:id/versions` already returns the full chain.
+- Deps: P14-003
 - Acceptance: undo/redo works via version stack
 
 ### P22-006 — Save/persist studio changes (`PATCH /api/visualizations/:id`)
 
-- [ ] Deps: P14-003, P4-004
+- [x] Every studio interaction (chart type change) is already persisted immediately via `PATCH /api/visualizations/:id` — there's no separate "save" step because each change *is* a new committed version. Verified live (see P22-002).
+- Deps: P14-003, P4-004
 - Acceptance: reload preserves state
 
 ---

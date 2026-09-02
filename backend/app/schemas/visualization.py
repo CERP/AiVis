@@ -20,6 +20,7 @@ class ApplyCommandRequest(BaseModel):
 class VisualizationResponse(BaseModel):
     id: uuid.UUID
     project_id: uuid.UUID
+    dataset_id: uuid.UUID
     dataset_version_id: uuid.UUID
     story_id: uuid.UUID | None
     title: str

@@ -2,6 +2,7 @@
 
 import { motion } from "framer-motion";
 
+import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Annotation, ChartLabel, SectionHeading } from "@/components/ui/typography";
 import { getChartDefinition } from "@/lib/visualization/registry";
@@ -11,6 +12,8 @@ import { cn } from "@/lib/utils";
 interface RecommendationCardProps {
   recommendation: VisualizationRecommendation;
   index: number;
+  onOpenStudio?: (recommendation: VisualizationRecommendation) => void;
+  isOpeningStudio?: boolean;
 }
 
 const CHART_TYPE_GLYPH: Record<string, string> = {
@@ -24,7 +27,12 @@ const CHART_TYPE_GLYPH: Record<string, string> = {
   donut: "◍",
 };
 
-export function RecommendationCard({ recommendation, index }: RecommendationCardProps) {
+export function RecommendationCard({
+  recommendation,
+  index,
+  onOpenStudio,
+  isOpeningStudio,
+}: RecommendationCardProps) {
   const chartDef = getChartDefinition(recommendation.spec.chart_type);
   const confidencePct = Math.round(recommendation.confidence * 100);
 
@@ -55,9 +63,20 @@ export function RecommendationCard({ recommendation, index }: RecommendationCard
         <CardContent className="flex flex-1 flex-col gap-3">
           <p className="text-sm text-foreground">{recommendation.analytical_question}</p>
           <p className="text-sm text-muted-foreground">{recommendation.explanation}</p>
-          <Annotation className="mt-auto text-xs font-normal text-muted-foreground">
+          <Annotation className="text-xs font-normal text-muted-foreground">
             {recommendation.why_recommended}
           </Annotation>
+          {onOpenStudio && (
+            <Button
+              size="sm"
+              variant="outline"
+              className="mt-auto"
+              onClick={() => onOpenStudio(recommendation)}
+              disabled={isOpeningStudio}
+            >
+              {isOpeningStudio ? "Opening…" : "Open in studio"}
+            </Button>
+          )}
         </CardContent>
       </Card>
     </motion.div>

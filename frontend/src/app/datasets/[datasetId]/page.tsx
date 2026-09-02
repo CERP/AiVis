@@ -1,7 +1,7 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 
 import { AppShell } from "@/components/layout/app-shell";
 import { Button } from "@/components/ui/button";
@@ -9,6 +9,7 @@ import { RecommendationCard } from "@/components/recommendations/recommendation-
 import { EmptyState, ErrorState, ProcessingState } from "@/components/ui/states";
 import { Headline, SectionHeading, Subtitle } from "@/components/ui/typography";
 import { ApiError } from "@/lib/api/client";
+import { getDataset } from "@/lib/api/datasets";
 import {
   analyzeInsights,
   analyzeStories,
@@ -16,11 +17,19 @@ import {
   getRecommendations,
   listInsights,
 } from "@/lib/api/insights";
+import { createVisualization } from "@/lib/api/visualizations";
+import type { VisualizationRecommendation } from "@/lib/api/types";
 
 export default function DatasetDetailPage() {
   const params = useParams<{ datasetId: string }>();
   const datasetId = params.datasetId;
   const queryClient = useQueryClient();
+  const router = useRouter();
+
+  const datasetQuery = useQuery({
+    queryKey: ["dataset", datasetId],
+    queryFn: () => getDataset(datasetId),
+  });
 
   const profileQuery = useQuery({
     queryKey: ["profile", datasetId],
@@ -48,6 +57,20 @@ export default function DatasetDetailPage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["insights", datasetId] });
       queryClient.invalidateQueries({ queryKey: ["recommendations", datasetId] });
+    },
+  });
+
+  const openInStudio = useMutation({
+    mutationFn: (recommendation: VisualizationRecommendation) => {
+      if (!datasetQuery.data) throw new Error("Dataset not loaded yet");
+      return createVisualization(datasetQuery.data.project_id, {
+        title: recommendation.title,
+        story_id: recommendation.story_id,
+        spec: recommendation.spec,
+      });
+    },
+    onSuccess: (visualization) => {
+      router.push(`/studio/${visualization.id}`);
     },
   });
 
@@ -125,7 +148,13 @@ export default function DatasetDetailPage() {
             {recommendationsQuery.data && recommendationsQuery.data.top.length > 0 && (
               <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
                 {recommendationsQuery.data.top.map((rec, index) => (
-                  <RecommendationCard key={rec.story_id} recommendation={rec} index={index} />
+                  <RecommendationCard
+                    key={rec.story_id}
+                    recommendation={rec}
+                    index={index}
+                    onOpenStudio={(r) => openInStudio.mutate(r)}
+                    isOpeningStudio={openInStudio.isPending}
+                  />
                 ))}
               </div>
             )}
@@ -137,7 +166,13 @@ export default function DatasetDetailPage() {
                 </SectionHeading>
                 <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
                   {recommendationsQuery.data.derived.map((rec, index) => (
-                    <RecommendationCard key={rec.story_id} recommendation={rec} index={index} />
+                    <RecommendationCard
+                    key={rec.story_id}
+                    recommendation={rec}
+                    index={index}
+                    onOpenStudio={(r) => openInStudio.mutate(r)}
+                    isOpeningStudio={openInStudio.isPending}
+                  />
                   ))}
                 </div>
               </div>
