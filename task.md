@@ -312,30 +312,31 @@ Scope reminder: Chatbot / AI Visualization Copilot is FUTURE PHASE 2. Do not imp
 
 ### P9-001 — Cleaning suggestion generation (deterministic + AI-assisted recommend-only)
 
-- [ ] AI recommends, engine never mutates raw data directly
+- [ ] Not started — blocked behind Phase 11 (AI integration). The executor/audit/API side (P9-002..004) is done and callable directly with an explicit operation_type; only the "AI looks at the profile and suggests which op to run" layer is missing.
 - Deps: P8-*, P11-*
 - Acceptance: suggestions reference profiler findings
 
 ### P9-002 — Deterministic transformation executors (parse dates, coerce numeric, trim strings, dedupe, standardize categories)
 
-- [ ] `data/transforms.py`, each pure + reversible + logged
-- Acceptance: unit tests: valid/invalid counts reported (e.g. "49,982 valid / 18 invalid")
+- [x] `app/data/transforms.py`: `trim_strings`, `standardize_case`, `coerce_numeric` (strips $/€/£/¥/commas), `parse_dates` (tries `%Y-%m-%d`, `%m/%d/%Y`, `%d/%m/%Y`, `%b %d %Y`, `%B %d %Y`, `%Y/%m/%d` in order), `normalize_percentage`, `dedupe_rows` (optional column subset). Each is pure (input DataFrame/Series untouched) and returns a `TransformResult`/`DedupeResult` with valid/invalid counts. Caught a real bug while testing: valid_count was initially double-counting missing (null) values as "valid" instead of excluding them from both valid and invalid — fixed so valid+invalid+missing accounts for every row correctly.
+- Acceptance: unit tests — `tests/unit/test_transforms.py`, 10/10 passing, asserting exact valid/invalid counts against known messy inputs
 
 ### P9-003 — Cleaning operation audit log (`cleaning_operations` table)
 
-- [ ] Every transform recorded with before/after summary
+- [x] `app/services/cleaning.py::apply_cleaning_operation` writes one `CleaningOperation` row per call (operation_type, column_name, params, valid_count, invalid_count, ai_suggested=False for now) against the *new* version it produces.
 - Deps: P4-004, P9-002
-- Acceptance: history queryable
+- Acceptance: history queryable — row created and returned via the API response; verified in integration tests
 
 ### P9-004 — API: `POST /api/datasets/:id/clean`
 
-- [ ] Apply validated transform, return report
+- [x] Loads the dataset's latest Parquet version, applies the requested transform, writes a new immutable `DatasetVersion` (`parent_version_id` set, `is_raw=False`), re-profiles all columns for the new version (reuses the Phase 8 profiler), and returns `{new_version_id, version_number, row_count, column_count, valid_count, invalid_count}`. 409 if dataset isn't `ready`; 422 for an unknown operation or column.
 - Deps: P9-002, P9-003
-- Acceptance: integration test on messy.csv
+- Acceptance: integration test on messy.csv — `tests/integration/test_cleaning_api.py`, 5/5 passing (coerce_numeric with 1 invalid "twenty", parse_dates, dedupe_rows removing the intentional duplicate, unknown-op 422, not-ready 409) against live Postgres + MinIO
 
 ### P9-005 — Frontend cleaning review UI (accept/reject suggestions)
 
-- [ ] Deps: P9-004
+- [ ] Not started
+- Deps: P9-004
 - Acceptance: manual browser test
 
 ---
@@ -344,24 +345,27 @@ Scope reminder: Chatbot / AI Visualization Copilot is FUTURE PHASE 2. Do not imp
 
 ### P10-001 — Column name normalization (snake_case, dedupe collisions)
 
-- [ ] Deps: P9-002
-- Acceptance: unit test
+- [x] `app/data/ingestion.py::normalize_column_name` + `deduplicate_column_names`, applied at ingestion time (Phase 7) before the first Parquet write — e.g. `"Revenue ($)"` → `revenue`, `"Product Name"` → `product_name`, collisions get `_1`/`_2` suffixes.
+- Deps: P9-002
+- Acceptance: unit test — covered indirectly via ingestion/profile integration tests asserting normalized names (`region`, `product_name`, etc.); add a dedicated unit test if collision edge cases grow
 
 ### P10-002 — Mixed-format parsing (dates, percentages, currency-as-text)
 
-- [ ] Deps: P9-002
-- Acceptance: fixture-driven tests
+- [x] `coerce_numeric` (currency-as-text), `parse_dates` (mixed formats), `normalize_percentage` — all in `app/data/transforms.py`, exposed via `POST /api/datasets/:id/clean`.
+- Deps: P9-002
+- Acceptance: fixture-driven tests — verified against `messy.csv`'s `$1,200.50`, `01/02/2024`/`Jan 4 2024` mixed dates, and non-numeric `"twenty"`
 
 ### P10-003 — Duplicate row detection/handling
 
-- [ ] Deps: P9-002
-- Acceptance: unit test
+- [x] `dedupe_rows` (full-row or column-subset), exposed as the `dedupe_rows` operation type.
+- Deps: P9-002
+- Acceptance: unit test + integration test — `messy.csv`'s intentional duplicate row removed when subset excludes the differing `notes` column
 
 ### P10-004 — Preserve original + cleaned + transformation history (`dataset_versions`)
 
-- [ ] Immutable raw version always retained
+- [x] v0 (`is_raw=True`) is created at ingestion and never modified; every cleaning op appends a new version via `parent_version_id`, forming a full lineage chain. Raw upload bytes also remain untouched in the raw object storage bucket independent of any processed version.
 - Deps: P4-001, P9-003
-- Acceptance: both versions retrievable
+- Acceptance: both versions retrievable — verified via `DatasetVersionRepository.list_for_dataset`/`get_latest` in tests; no dedicated "diff two versions" endpoint yet (not required by any task so far)
 
 ---
 
