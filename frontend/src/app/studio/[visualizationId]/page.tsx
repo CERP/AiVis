@@ -2,9 +2,11 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useParams } from "next/navigation";
-import { useState } from "react";
+import { useRef, useState } from "react";
+import type { View } from "vega";
 
 import { AppShell } from "@/components/layout/app-shell";
+import { Button } from "@/components/ui/button";
 import { VisualizationRenderer } from "@/components/visualization/visualization-renderer";
 import { ErrorState, ProcessingState } from "@/components/ui/states";
 import { Headline, SectionHeading, Subtitle } from "@/components/ui/typography";
@@ -18,6 +20,7 @@ import {
   type VisualizationCommand,
 } from "@/lib/api/visualizations";
 import { CHART_REGISTRY } from "@/lib/visualization/registry";
+import { exportPng, exportSvg } from "@/lib/visualization/export";
 import { cn } from "@/lib/utils";
 
 export default function StudioPage() {
@@ -25,6 +28,9 @@ export default function StudioPage() {
   const visualizationId = params.visualizationId;
   const queryClient = useQueryClient();
   const [selectedTheme, setSelectedTheme] = useState<ThemeTokens | undefined>(undefined);
+  const viewRef = useRef<View | null>(null);
+  const [viewReady, setViewReady] = useState(false);
+  const [exportError, setExportError] = useState<string | null>(null);
 
   const visualizationQuery = useQuery({
     queryKey: ["visualization", visualizationId],
@@ -79,16 +85,55 @@ export default function StudioPage() {
   return (
     <AppShell>
       <section className="mx-auto flex max-w-5xl flex-col gap-6 px-6 py-16">
-        <div>
-          <Headline as="h1" className="text-3xl">
-            {visualizationQuery.data?.title ?? "Studio"}
-          </Headline>
-          {currentVersion && (
-            <Subtitle className="mt-2">
-              Version {currentVersion.version_number} · {currentVersion.spec.chart_type}
-            </Subtitle>
-          )}
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <Headline as="h1" className="text-3xl">
+              {visualizationQuery.data?.title ?? "Studio"}
+            </Headline>
+            {currentVersion && (
+              <Subtitle className="mt-2">
+                Version {currentVersion.version_number} · {currentVersion.spec.chart_type}
+              </Subtitle>
+            )}
+          </div>
+          <div className="flex shrink-0 gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={!viewReady}
+              onClick={async () => {
+                setExportError(null);
+                try {
+                  if (viewRef.current) await exportSvg(viewRef.current, "visualization.svg");
+                } catch (err) {
+                  setExportError(err instanceof Error ? err.message : "SVG export failed.");
+                }
+              }}
+            >
+              Export SVG
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={!viewReady}
+              onClick={async () => {
+                setExportError(null);
+                try {
+                  if (viewRef.current) await exportPng(viewRef.current, "visualization.png");
+                } catch (err) {
+                  setExportError(err instanceof Error ? err.message : "PNG export failed.");
+                }
+              }}
+            >
+              Export PNG
+            </Button>
+          </div>
         </div>
+        {exportError && (
+          <p role="alert" className="text-sm text-negative">
+            {exportError}
+          </p>
+        )}
 
         <div className="grid grid-cols-1 gap-8 lg:grid-cols-[1fr_260px]">
           <div className="rounded-[var(--radius-token)] border border-border p-6">
@@ -100,6 +145,10 @@ export default function StudioPage() {
                 spec={currentVersion.spec}
                 rows={rowsQuery.data.rows}
                 theme={activeTheme}
+                onReady={(view) => {
+                  viewRef.current = view;
+                  setViewReady(!!view);
+                }}
               />
             )}
           </div>

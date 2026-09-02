@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import type { View } from "vega";
 
 import { compileToVegaLite } from "@/lib/visualization/to-vega-lite";
 import type { VisualizationSpec } from "@/lib/visualization/spec";
@@ -12,6 +13,7 @@ interface VisualizationRendererProps {
   rows: Record<string, unknown>[];
   theme?: ThemeTokens;
   className?: string;
+  onReady?: (view: View | null) => void;
 }
 
 export function VisualizationRenderer({
@@ -19,6 +21,7 @@ export function VisualizationRenderer({
   rows,
   theme,
   className,
+  onReady,
 }: VisualizationRendererProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [error, setError] = useState<string | null>(null);
@@ -40,8 +43,12 @@ export function VisualizationRenderer({
           result.view.finalize();
           return;
         }
-        cleanup = () => result.view.finalize();
+        cleanup = () => {
+          onReady?.(null);
+          result.view.finalize();
+        };
         setError(null);
+        onReady?.(result.view);
       } catch (err) {
         if (!cancelled) {
           setError(err instanceof Error ? err.message : "Failed to render visualization");
@@ -55,6 +62,10 @@ export function VisualizationRenderer({
       cancelled = true;
       cleanup?.();
     };
+    // onReady is intentionally excluded: it's a callback ref setter, not render input --
+    // including it would re-run this effect (and re-create the Vega view) whenever the
+    // parent re-renders with a new inline function identity.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [spec, rows, theme]);
 
   if (error) {

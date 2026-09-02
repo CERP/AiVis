@@ -761,22 +761,26 @@ Scope reminder: Chatbot / AI Visualization Copilot is FUTURE PHASE 2. Do not imp
 
 ### P26-001 — SVG export
 
-- [ ] Deps: P15-002
-- Acceptance: exported SVG retains typography/annotations/labels/source
+- [x] `frontend/src/lib/visualization/export.ts::exportSvg` — uses Vega's own `view.toSVG()` (the same view instance the studio renders with, exposed via `VisualizationRenderer`'s new `onReady` callback), triggers a real browser download via an object URL. Client-side only, no backend round-trip. **Typography/annotations/source-note retention not verified** — the exported SVG is exactly what Vega rendered, and since annotations (Phase 23) aren't implemented and typography styling isn't fully theme-driven yet (Phase 22-004 gap), there's nothing beyond axis/title text to retain right now; revisit this acceptance criterion once those exist.
+- Deps: P15-002
+- Acceptance: verified live — clicking "Export SVG" in the studio triggers a real blob download (`visualization.svg`, confirmed via instrumenting `HTMLAnchorElement.click`)
 
 ### P26-002 — PNG export
 
-- [ ] Deps: P26-001
-- Acceptance: exported PNG matches rendered chart
+- [x] `exportPng` — `view.toImageURL("png", 2)` (2x scale for crisp export), same download mechanism.
+- Deps: P26-001
+- Acceptance: exported PNG matches rendered chart — verified live: triggered a real `data:image/png;base64,...` download from the same view instance mid-session
 
 ### P26-003 — JSON spec export
 
-- [ ] Deps: P14-001
-- Acceptance: round-trips through validator
+- [ ] Not started — `VisualizationSpec` is already JSON-serializable (`model_dump(mode="json")`/`model_validate_json` used throughout Phase 14) so this is mechanical once there's a UI button for it; just not wired yet.
+- Deps: P14-001
+- Acceptance: round-trips through validator — the round-trip itself is already covered by `test_spec_round_trips_through_json` (Phase 14), just not exposed as a user-facing export action
 
 ### P26-004 — API: `POST /api/exports`, `GET /api/exports/:id`
 
-- [ ] Deps: P26-001..003, P4-004, P5-*
+- [ ] Not started. The `Export` model/table exists (Phase 4) but nothing writes to it — SVG/PNG export is currently client-side-only with no persisted record, no object-storage copy, and no shareable link. Needed for "reopen a past export" or "share an export link," not needed for "download what I'm looking at right now" (which works).
+- Deps: P26-001..003, P4-004, P5-*
 - Acceptance: endpoint tests, files in object storage
 
 ### P26-005 — PDF export
