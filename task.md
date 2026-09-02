@@ -590,15 +590,15 @@ Scope reminder: Chatbot / AI Visualization Copilot is FUTURE PHASE 2. Do not imp
 
 ### P18-001 — Recommendation card component (preview, name, question, explanation, why-recommended, confidence, related insight)
 
-- [ ] Editorial card design, not generic dashboard cards
+- [x] `frontend/src/components/recommendations/recommendation-card.tsx` — chart-type glyph header, title, confidence badge, chart-type label, analytical question, explanation, why-recommended note. **Gap:** no live mini-chart preview (spec says "visualization preview") — the recommendation API response only carries the `VisualizationSpec`, not row data, so there's nothing to render yet; would need either a new preview-rows endpoint or reusing `/profile` sample data. Using a static chart-type glyph as a placeholder instead of guessing at fabricated preview data.
 - Deps: P17-005, P16-*
-- Acceptance: renders 8 cards from API data
+- Acceptance: renders 8 cards from API data — **rendered from data shaped exactly like the real API response, not a live fetch** (frontend auth/Phase 3-003 doesn't exist yet, so there's no way to get a token in the browser). Verified live at `/recommendations-preview`: 3 top + 1 derived card render correctly, confidence badges show 70%/95%/85%/75%, chart-type labels correct.
 
 ### P18-002 — "8 ways to see your data" screen layout + Framer Motion entrance
 
-- [ ] Responsive horizontal/vertical exploration
+- [x] `frontend/src/app/recommendations-preview/page.tsx` — responsive grid (`grid-cols-1 sm:grid-cols-2 lg:grid-cols-3`), "Explore more" section for the derived pool, staggered Framer Motion entrance (`delay: index * 0.06`) on each card.
 - Deps: P18-001
-- Acceptance: manual browser test desktop+mobile
+- Acceptance: manual browser test desktop+mobile — verified live at both 450px (single column, confirmed via screenshot) and 1280px (3-column grid, confirmed via screenshot + bounding-box math for centering). `prefers-reduced-motion` handled globally via the CSS rule in `globals.css` (Phase 2), not per-component — not re-verified against this specific animation this session.
 
 ---
 
