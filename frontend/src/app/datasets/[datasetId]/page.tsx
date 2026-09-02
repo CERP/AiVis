@@ -129,6 +129,19 @@ export default function DatasetDetailPage() {
                 ))}
               </div>
             )}
+
+            {recommendationsQuery.data && recommendationsQuery.data.derived.length > 0 && (
+              <div className="mt-4 flex flex-col gap-4">
+                <SectionHeading as="h2" className="text-lg">
+                  Explore more
+                </SectionHeading>
+                <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
+                  {recommendationsQuery.data.derived.map((rec, index) => (
+                    <RecommendationCard key={rec.story_id} recommendation={rec} index={index} />
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         )}
       </section>

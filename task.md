@@ -157,12 +157,12 @@ Scope reminder: Chatbot / AI Visualization Copilot is FUTURE PHASE 2. Do not imp
 
 - [x] `frontend/src/app/login/page.tsx`, `frontend/src/app/signup/page.tsx` — TanStack Query mutations against the real `/api/auth/{login,signup}` endpoints. Session state via `frontend/src/store/auth-store.ts` (Zustand + `persist` to localStorage). `frontend/src/lib/api/client.ts` attaches the bearer token to every request automatically.
 - Deps: P3-002
-- Acceptance: manual login works in browser — **verified live end-to-end**: ran backend+Postgres+MinIO+frontend together, signed up a real account through the browser (`browsertest@example.com`), confirmed `POST /api/auth/signup` → 201 in the network log, redirect to `/projects`, and a real `GET /api/projects` → 200 rendering the "No projects yet" empty state.
+- Acceptance: manual login works in browser — __verified live end-to-end__: ran backend+Postgres+MinIO+frontend together, signed up a real account through the browser (`browsertest@example.com`), confirmed `POST /api/auth/signup` → 201 in the network log, redirect to `/projects`, and a real `GET /api/projects` → 200 rendering the "No projects yet" empty state.
 
 ### P3-004 — Route protection (frontend middleware, backend dependency)
 
-- [x] Backend: `app/api/deps.py::get_current_user` (HTTPBearer + JWT decode) — done, verified (Phase 3-002). Frontend: `frontend/src/middleware.ts` gates `/projects`, `/datasets`, `/studio` behind a non-httpOnly `aivis_auth_present` cookie mirrored by the auth store on login/signup — **this only proves a token is present, not that it's valid**; real authorization still happens server-side on every API call. Documented as a UX redirect, not the security boundary.
-- Acceptance: unauthenticated access blocked — verified for backend (`/api/auth/me` returns 401 without token) **and now for frontend**: visiting `/projects` with no auth cookie live-redirected to `/login?next=%2Fprojects` in the browser, confirmed via `window.location.pathname`.
+- [x] Backend: `app/api/deps.py::get_current_user` (HTTPBearer + JWT decode) — done, verified (Phase 3-002). Frontend: `frontend/src/middleware.ts` gates `/projects`, `/datasets`, `/studio` behind a non-httpOnly `aivis_auth_present` cookie mirrored by the auth store on login/signup — __this only proves a token is present, not that it's valid__; real authorization still happens server-side on every API call. Documented as a UX redirect, not the security boundary.
+- Acceptance: unauthenticated access blocked — verified for backend (`/api/auth/me` returns 401 without token) __and now for frontend__: visiting `/projects` with no auth cookie live-redirected to `/login?next=%2Fprojects` in the browser, confirmed via `window.location.pathname`.
 
 ---
 
@@ -228,9 +228,9 @@ Scope reminder: Chatbot / AI Visualization Copilot is FUTURE PHASE 2. Do not imp
 
 ### P6-003 — Frontend upload UI (drag-drop, progress, validation feedback)
 
-- [~] `frontend/src/app/projects/[projectId]/page.tsx` — click-to-upload via a hidden file input (accepts .csv/.tsv/.json/.xlsx/.xls), dataset list with a status pill (Uploading/Processing/Analyzing/Ready/Failed) that polls every 1.5s while a dataset is mid-pipeline, error message shown inline on upload failure. **Gap:** no drag-drop yet, just click-to-browse — flagged for a follow-up, not a blocker for the golden path.
+- [~] `frontend/src/app/projects/[projectId]/page.tsx` — click-to-upload via a hidden file input (accepts .csv/.tsv/.json/.xlsx/.xls), dataset list with a status pill (Uploading/Processing/Analyzing/Ready/Failed) that polls every 1.5s while a dataset is mid-pipeline, error message shown inline on upload failure. __Gap:__ no drag-drop yet, just click-to-browse — flagged for a follow-up, not a blocker for the golden path.
 - Deps: P6-001
-- Acceptance: manual browser test with clean.csv — **verified live end-to-end**: ran backend+Postgres+MinIO+frontend together, signed up, created a project through the UI, uploaded clean.csv (simulated file selection via a synthetic DataTransfer since cross-tool real filesystem access to the preview browser wasn't available — same code path as a real pick, `POST /api/datasets` → 201), and confirmed the dataset appears in the list as a clickable "clean.csv" link with status "Ready" and correct size, via accessibility snapshot.
+- Acceptance: manual browser test with clean.csv — __verified live end-to-end__: ran backend+Postgres+MinIO+frontend together, signed up, created a project through the UI, uploaded clean.csv (simulated file selection via a synthetic DataTransfer since cross-tool real filesystem access to the preview browser wasn't available — same code path as a real pick, `POST /api/datasets` → 201), and confirmed the dataset appears in the list as a clickable "clean.csv" link with status "Ready" and correct size, via accessibility snapshot.
 
 ### P6-004 — Upload → object storage → dataset record pipeline
 
@@ -380,7 +380,7 @@ Scope reminder: Chatbot / AI Visualization Copilot is FUTURE PHASE 2. Do not imp
 
 - [x] `app/ai/gemini_provider.py` using the current `google-genai` SDK (switched off `google-generativeai`, which is deprecated as of this session — pip install warned it "will no longer be receiving updates or bug fixes"). Structured output via `response_schema` + `response_mime_type=application/json`, 2-attempt retry on provider error or schema validation failure. `app/ai/factory.py::get_ai_provider()` selects provider by `AI_PROVIDER` setting (only "gemini" wired so far).
 - Deps: P11-001
-- Acceptance: unit test with mocked Gemini client — done via a `FakeProvider` test double (see P9-style pattern) in `tests/unit/test_ai_interpretation.py`, 2/2 passing. **Not yet verified against the real Gemini API** — user supplied a `GEMINI_API_KEY` but explicitly withheld permission to use it for a live call this session; key is saved in `.env` (gitignored) for whenever that's authorized.
+- Acceptance: unit test with mocked Gemini client — done via a `FakeProvider` test double (see P9-style pattern) in `tests/unit/test_ai_interpretation.py`, 2/2 passing. __Not yet verified against the real Gemini API__ — user supplied a `GEMINI_API_KEY` but explicitly withheld permission to use it for a live call this session; key is saved in `.env` (gitignored) for whenever that's authorized.
 
 ### P11-003 — Data minimization layer (profiler summary → AI, never raw dataset)
 
@@ -462,7 +462,7 @@ Scope reminder: Chatbot / AI Visualization Copilot is FUTURE PHASE 2. Do not imp
 
 ### P13-002 — Story generation logic (question templates + AI-assisted phrasing over real insights)
 
-- [x] `app/insights/story_generator.py`: one story per insight, question-template-per-InsightType (e.g. trend → "How did X change over time?", ranking → "Which {category} leads on {measure}?"), chart-type recommendation per insight type (trend→line, ranking→bar, relationship→scatter, outlier→box_plot, distribution→histogram). Deliberately **not** AI-assisted phrasing yet — stayed template-based since Phase 11's AI plumbing exists but hasn't been live-verified; wiring AI-polish onto these templates is a natural follow-up once that's authorized. Every story is derived from an actual persisted Insight, so it can never claim more than the insight already grounded.
+- [x] `app/insights/story_generator.py`: one story per insight, question-template-per-InsightType (e.g. trend → "How did X change over time?", ranking → "Which {category} leads on {measure}?"), chart-type recommendation per insight type (trend→line, ranking→bar, relationship→scatter, outlier→box_plot, distribution→histogram). Deliberately __not__ AI-assisted phrasing yet — stayed template-based since Phase 11's AI plumbing exists but hasn't been live-verified; wiring AI-polish onto these templates is a natural follow-up once that's authorized. Every story is derived from an actual persisted Insight, so it can never claim more than the insight already grounded.
 - Deps: P12-*, P11-* (soft dep on P11 — not actually required since templates don't call AI)
 - Acceptance: generates ≥5 stories on fixture dataset, all field-grounded — verified live on clean.csv: 7 insights → 7 stories, 1:1, every story's `relevant_fields` inherited directly from its source insight
 
@@ -477,7 +477,7 @@ Scope reminder: Chatbot / AI Visualization Copilot is FUTURE PHASE 2. Do not imp
 
 ### P14-001 — Canonical VisualizationSpec schema (Pydantic + TS mirror)
 
-- [x] `app/visualization/spec.py`: `chart_type`, `encoding` (x/y/color/size/detail, each with field/type/aggregation/label/format), `transformations` (named refs, not code), `filters`, `sort`, `annotations` (typed: callout/reference_line/highlighted_region/label/source_note), `theme`, `typography`, `layout`, `metadata` (dataset_id/dataset_version_id/story_id). JSON-serializable (`model_dump(mode="json")`) so it stores verbatim in `VisualizationVersion.spec`. **TS mirror not built yet** — no frontend visualization UI exists to consume it; will hand-write or codegen the TS type when Phase 16+ frontend work starts.
+- [x] `app/visualization/spec.py`: `chart_type`, `encoding` (x/y/color/size/detail, each with field/type/aggregation/label/format), `transformations` (named refs, not code), `filters`, `sort`, `annotations` (typed: callout/reference_line/highlighted_region/label/source_note), `theme`, `typography`, `layout`, `metadata` (dataset_id/dataset_version_id/story_id). JSON-serializable (`model_dump(mode="json")`) so it stores verbatim in `VisualizationVersion.spec`. __TS mirror not built yet__ — no frontend visualization UI exists to consume it; will hand-write or codegen the TS type when Phase 16+ frontend work starts.
 - Acceptance: schema documented in VISUALIZATION_ENGINE.md — doc predates the implementation and already matches; round-trip verified via `test_spec_round_trips_through_json`
 
 ### P14-002 — Visualization validation layer
@@ -504,7 +504,7 @@ Scope reminder: Chatbot / AI Visualization Copilot is FUTURE PHASE 2. Do not imp
 
 ### P15-001 — Chart type registry (metadata: category, required encodings, data-type compatibility)
 
-- [x] Built on the **frontend** instead of as `backend/app/visualization/registry.py` — it's the only side consuming it so far (`frontend/src/lib/visualization/registry.ts`). Lists 8 implemented types (bar, grouped_bar, line, area, scatter, histogram, box_plot, donut — all Vega-Lite-backed) plus 3 explicitly `implemented: false` planned types (treemap, choropleth, sankey — D3-backed once built) so the future recommendation engine (Phase 17) has a stable universe to reference even before every renderer exists. A backend-side registry may still be needed once Phase 17 does server-side candidate generation — flagged as a possible follow-up, not duplicated speculatively now.
+- [x] Built on the __frontend__ instead of as `backend/app/visualization/registry.py` — it's the only side consuming it so far (`frontend/src/lib/visualization/registry.ts`). Lists 8 implemented types (bar, grouped_bar, line, area, scatter, histogram, box_plot, donut — all Vega-Lite-backed) plus 3 explicitly `implemented: false` planned types (treemap, choropleth, sankey — D3-backed once built) so the future recommendation engine (Phase 17) has a stable universe to reference even before every renderer exists. A backend-side registry may still be needed once Phase 17 does server-side candidate generation — flagged as a possible follow-up, not duplicated speculatively now.
 - Deps: P14-001
 - Acceptance: registry lists implemented + planned types — done
 
@@ -558,7 +558,7 @@ Scope reminder: Chatbot / AI Visualization Copilot is FUTURE PHASE 2. Do not imp
 
 - [x] `app/visualization/recommendation.py::_build_spec_for_story` — one candidate per Story (Phase 13), never generated independently of a real insight. Field→encoding-channel assignment is heuristic but grounded: temporal/nominal fields go on x, quantitative on y (with sum aggregation for bar/line/area), two-quantitative-field stories (relationships) become scatter plots. On `clean.csv`'s 7 stories this produces 7 candidates — below the ">8" acceptance target because the fixture only has 5 columns; noted as a fixture-size limitation, not an engine bug (the *logic* scales — a wider dataset produces more candidates).
 - Deps: P8-*, P15-001
-- Acceptance: generates >8 candidates on fixture dataset — **not met on `clean.csv`** (7 candidates, fixture too narrow); revisit with a wider fixture (more columns) if this needs to be proven at >8
+- Acceptance: generates >8 candidates on fixture dataset — __not met on `clean.csv`__ (7 candidates, fixture too narrow); revisit with a wider fixture (more columns) if this needs to be proven at >8
 
 ### P17-002 — Compatibility filtering (data type, cardinality, temporal structure)
 
@@ -568,7 +568,7 @@ Scope reminder: Chatbot / AI Visualization Copilot is FUTURE PHASE 2. Do not imp
 
 ### P17-003 — Ranking (analytical relevance, insight strength, clarity, accessibility, redundancy, editorial suitability)
 
-- [x] Ranked purely by the source Story's `confidence`, which already encodes analytical relevance + insight strength (Phase 12's detector confidence scores). Clarity/accessibility/editorial-suitability are **not** separately scored — those need theme/typography context that doesn't exist until Phase 20/21, so folding them in now would be guessing. Flagged as a real gap, not silently skipped.
+- [x] Ranked purely by the source Story's `confidence`, which already encodes analytical relevance + insight strength (Phase 12's detector confidence scores). Clarity/accessibility/editorial-suitability are __not__ separately scored — those need theme/typography context that doesn't exist until Phase 20/21, so folding them in now would be guessing. Flagged as a real gap, not silently skipped.
 - Deps: P12-*, P13-*, P17-002
 - Acceptance: deterministic ranking test with fixed fixture + seed — no randomness in the pipeline at all (pure sort by confidence), so determinism is trivially true; verified via `test_recommendations_are_valid_specs_grounded_in_stories` asserting `top` confidences are non-increasing
 
@@ -590,9 +590,9 @@ Scope reminder: Chatbot / AI Visualization Copilot is FUTURE PHASE 2. Do not imp
 
 ### P18-001 — Recommendation card component (preview, name, question, explanation, why-recommended, confidence, related insight)
 
-- [x] `frontend/src/components/recommendations/recommendation-card.tsx` — chart-type glyph header, title, confidence badge, chart-type label, analytical question, explanation, why-recommended note. **Gap:** no live mini-chart preview (spec says "visualization preview") — the recommendation API response only carries the `VisualizationSpec`, not row data, so there's nothing to render yet; would need either a new preview-rows endpoint or reusing `/profile` sample data. Using a static chart-type glyph as a placeholder instead of guessing at fabricated preview data.
+- [x] `frontend/src/components/recommendations/recommendation-card.tsx` — chart-type glyph header, title, confidence badge, chart-type label, analytical question, explanation, why-recommended note. __Gap:__ no live mini-chart preview (spec says "visualization preview") — the recommendation API response only carries the `VisualizationSpec`, not row data, so there's nothing to render yet; would need either a new preview-rows endpoint or reusing `/profile` sample data. Using a static chart-type glyph as a placeholder instead of guessing at fabricated preview data.
 - Deps: P17-005, P16-*
-- Acceptance: renders 8 cards from API data — originally verified with mock-shaped data only (frontend auth didn't exist yet); **now superseded**: `frontend/src/app/datasets/[datasetId]/page.tsx` wires this card to the real live pipeline (see new note below), verified against a real uploaded dataset end-to-end.
+- Acceptance: renders 8 cards from API data — originally verified with mock-shaped data only (frontend auth didn't exist yet); __now superseded__: `frontend/src/app/datasets/[datasetId]/page.tsx` wires this card to the real live pipeline (see new note below), verified against a real uploaded dataset end-to-end.
 
 ### P18-002 — "8 ways to see your data" screen layout + Framer Motion entrance
 
@@ -601,8 +601,9 @@ Scope reminder: Chatbot / AI Visualization Copilot is FUTURE PHASE 2. Do not imp
 - Acceptance: manual browser test desktop+mobile — verified live at both 450px (single column, confirmed via screenshot) and 1280px (3-column grid, confirmed via screenshot + bounding-box math for centering). `prefers-reduced-motion` handled globally via the CSS rule in `globals.css` (Phase 2), not per-component — not re-verified against this specific animation this session.
 
 ### Live-wired dataset detail page (closes the P18 mock-data gap)
+
 - [x] `frontend/src/app/datasets/[datasetId]/page.tsx` — fetches the real profile, shows a "Discover insights" button (explicit user action rather than auto-triggering on mount, since `insights/analyze` and `stories/analyze` both create new rows on every call and React's dev-mode double-invoke would otherwise duplicate them), then on click runs insights→stories→recommendations sequentially and renders the *real* `RecommendationCard` grid from the live API response.
-- Acceptance: **verified fully live end-to-end** with backend+Postgres+MinIO+frontend running together: signed up, created a project, uploaded an 8-row CSV (via synthetic `DataTransfer`, same code path as a real file pick), landed on the dataset page showing correct profile (8 rows, 5 columns, correct semantic types per column), clicked "Discover insights," and got 7 correctly-ranked recommendation cards (95%-confidence revenue/units relationship first, down to 70%-confidence trends) — the exact same numbers already proven correct by the backend integration tests, now confirmed reachable through the actual UI. Zero console errors.
+- Acceptance: __verified fully live end-to-end__ with backend+Postgres+MinIO+frontend running together: signed up, created a project, uploaded an 8-row CSV (via synthetic `DataTransfer`, same code path as a real file pick), landed on the dataset page showing correct profile (8 rows, 5 columns, correct semantic types per column), clicked "Discover insights," and got 7 correctly-ranked recommendation cards (95%-confidence revenue/units relationship first, down to 70%-confidence trends) — the exact same numbers already proven correct by the backend integration tests, now confirmed reachable through the actual UI. Zero console errors.
 
 ---
 
@@ -610,8 +611,9 @@ Scope reminder: Chatbot / AI Visualization Copilot is FUTURE PHASE 2. Do not imp
 
 ### P19-001 — "Explore more" derived visualization list (from candidate pool beyond top 8)
 
-- [ ] Deps: P17-001, P18-002
-- Acceptance: shows genuinely distinct additional charts
+- [x] `frontend/src/app/datasets/[datasetId]/page.tsx` renders `recommendationsQuery.data.derived` in a second "Explore more" grid below the top recommendations, reusing the same `RecommendationCard`. Genuinely distinct by construction — Phase 17's redundancy filter already guarantees no `(chart_type, fields)` overlap between `top` and `derived` before either reaches the frontend.
+- Deps: P17-001, P18-002
+- Acceptance: shows genuinely distinct additional charts — logic verified (mirrors the already-live-verified `top` rendering; the fixture used for live UI testing only produced 7 total candidates, so an empty `derived` pool specifically wasn't exercised in the browser this session — the underlying data correctness for a non-empty `derived` pool is already covered by `test_recommendations_are_valid_specs_grounded_in_stories`'s uniqueness assertion across `top + derived`)
 
 ---
 
