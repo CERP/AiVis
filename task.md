@@ -186,9 +186,9 @@ Scope reminder: Chatbot / AI Visualization Copilot is FUTURE PHASE 2. Do not imp
 
 ### P4-004 — Repository layer per entity
 
-- [ ] Not started — add per-entity repositories as each API endpoint phase (6, 8, 9, 12, 13, 14, 17, 20, 26) needs CRUD
+- [~] Generic `BaseRepository[ModelT]` (get/list/create/delete) + concrete repos for User, Organization, Membership, Project, Dataset, DatasetVersion, DatasetColumn, DataProfile, CleaningOperation. Verified against live Postgres: 5/5 integration tests pass (email lookup, slug lookup, project listing, version ordering/get-latest, enum role persistence). Insight/Story/Visualization/Theme/Export repos not yet added — add when their API phases start.
 - Deps: P4-002
-- Acceptance: unit tests per repo
+- Acceptance: unit tests per repo — passing for entities implemented so far
 
 ---
 
