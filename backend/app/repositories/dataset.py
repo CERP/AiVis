@@ -56,6 +56,12 @@ class DatasetColumnRepository(BaseRepository[DatasetColumn]):
 class DataProfileRepository(BaseRepository[DataProfile]):
     model = DataProfile
 
+    async def get_by_column(self, dataset_column_id: uuid.UUID) -> DataProfile | None:
+        result = await self.session.exec(
+            select(DataProfile).where(DataProfile.dataset_column_id == dataset_column_id)
+        )
+        return result.first()
+
 
 class CleaningOperationRepository(BaseRepository[CleaningOperation]):
     model = CleaningOperation

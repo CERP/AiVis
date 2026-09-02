@@ -9,9 +9,15 @@ from app.core.db import get_session
 from app.data.ingestion import IngestionError as ParseError
 from app.data.upload_validation import UploadValidationError, validate_upload
 from app.models.dataset import Dataset, DatasetStatus
-from app.repositories.dataset import DatasetRepository
+from app.repositories.dataset import (
+    DataProfileRepository,
+    DatasetColumnRepository,
+    DatasetRepository,
+    DatasetVersionRepository,
+)
 from app.repositories.project import ProjectRepository
 from app.schemas.dataset import DatasetResponse
+from app.schemas.profile import ColumnProfileResponse, DatasetProfileResponse
 from app.services.ingestion import ingest_dataset
 from app.services.storage import get_storage_service
 
@@ -108,6 +114,55 @@ async def get_dataset(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Dataset not found")
     await _require_project(dataset.project_id, organization_id, session)
     return dataset
+
+
+@router.get("/{dataset_id}/profile", response_model=DatasetProfileResponse)
+async def get_dataset_profile(
+    dataset_id: uuid.UUID,
+    organization_id: uuid.UUID = Depends(get_current_organization_id),
+    session: AsyncSession = Depends(get_session),
+) -> DatasetProfileResponse:
+    dataset = await DatasetRepository(session).get(dataset_id)
+    if dataset is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Dataset not found")
+    await _require_project(dataset.project_id, organization_id, session)
+
+    if dataset.status != DatasetStatus.READY:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"Dataset is not ready (status={dataset.status})",
+        )
+
+    version = await DatasetVersionRepository(session).get_latest(dataset_id)
+    if version is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No dataset version")
+
+    columns = await DatasetColumnRepository(session).list_for_version(version.id)
+    profile_repo = DataProfileRepository(session)
+
+    column_responses: list[ColumnProfileResponse] = []
+    for column in columns:
+        profile = await profile_repo.get_by_column(column.id)
+        column_responses.append(
+            ColumnProfileResponse(
+                id=column.id,
+                name=column.name,
+                ordinal=column.ordinal,
+                raw_type=column.raw_type,
+                semantic_type=column.semantic_type,
+                is_pii=column.is_pii,
+                null_count=profile.null_count if profile else 0,
+                unique_count=profile.unique_count if profile else 0,
+                stats=profile.stats if profile else {},
+            )
+        )
+
+    return DatasetProfileResponse(
+        dataset_version_id=version.id,
+        row_count=version.row_count,
+        column_count=version.column_count,
+        columns=column_responses,
+    )
 
 
 @router.delete("/{dataset_id}", status_code=status.HTTP_204_NO_CONTENT)

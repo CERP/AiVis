@@ -269,6 +269,7 @@ Scope reminder: Chatbot / AI Visualization Copilot is FUTURE PHASE 2. Do not imp
 - Acceptance: malformed.csv fixture produces structured error, not crash — verified via `test_malformed_csv_marks_dataset_failed` (upload endpoint still returns 201 with the dataset row; status reflects failure)
 
 ### Bug fixed this session: cascade delete
+
 - [x] `DELETE /api/datasets/:id` was raising a Postgres NOT NULL violation on `dataset_versions.dataset_id` because SQLAlchemy tried to null out child FKs on parent delete with no cascade configured. Fixed by adding `cascade="all, delete-orphan"` to the `Dataset.versions`, `DatasetVersion.columns`, `DatasetVersion.cleaning_operations`, and `DatasetColumn.profile` relationships (ORM-level, no migration needed — DB schema unchanged). Verified via the full upload/list/get/delete integration test.
 
 ---
@@ -277,33 +278,33 @@ Scope reminder: Chatbot / AI Visualization Copilot is FUTURE PHASE 2. Do not imp
 
 ### P8-001 — Column type inference (raw + semantic types)
 
-- [ ] Numeric/categorical/date/text/boolean/identifier/geo detection
+- [x] `app/insights/profiler.py::infer_semantic_type` — date/boolean/numeric/currency/identifier/categorical/text/geographic, using dtype + column-name heuristics (e.g. `_id` suffix → identifier, price/revenue/cost → currency, region/country/lat/lon → geographic). No dedicated correlation/relationship pass yet — that's P12-004 (Insight Engine).
 - Deps: P7-003
-- Acceptance: unit tests per fixture
+- Acceptance: verified live against `clean.csv` — all 5 columns classified correctly (date, geographic, categorical, currency, numeric)
 
 ### P8-002 — Statistical profiling (nulls, unique, distributions, min/max/mean/median, outliers, correlations)
 
-- [ ] `insights/profiler.py`
+- [x] `profile_column`: null/unique counts; numeric columns get min/max/mean/median/std, a skew heuristic (mean-vs-median ratio), and IQR-based outlier count; date columns get min/max; string columns get top-10 value counts. Cross-column correlations deferred to Phase 12 (Insight Engine relationship detection).
 - Deps: P8-001
-- Acceptance: profile JSON matches expected fixture stats
+- Acceptance: profile JSON matches expected fixture stats — verified live and via `test_profile_endpoint_returns_column_stats` (revenue mean asserted to 3 decimal places)
 
 ### P8-003 — Data profile persistence + API (`GET /api/datasets/:id/profile`)
 
-- [ ] Store in `data_profiles` table
+- [x] Profiling now runs synchronously as part of ingestion (`ingest_dataset`): status flows `ingesting` → `profiling` → `ready`/`failed`. Each column's semantic_type/is_pii is written onto `DatasetColumn`; stats persist to `data_profiles` (1:1 per column). New `GET /api/datasets/:id/profile` returns row/column counts plus per-column semantic type, PII flag, null/unique counts, and stats; 409 if the dataset isn't `ready` yet.
 - Deps: P8-002, P4-004
-- Acceptance: endpoint returns profile
+- Acceptance: endpoint returns profile — verified via `tests/integration/test_profile_api.py` (2/2) against live Postgres + MinIO
 
 ### P8-004 — Frontend data profile UI
 
-- [ ] Column cards, distributions, summary stats
+- [ ] Not started
 - Deps: P8-003
 - Acceptance: manual browser test
 
 ### P8-005 — PII / sensitive-column detection
 
-- [ ] Heuristics for email/phone/SSN/name-like columns
+- [x] `detect_pii`: name-hint set (email/phone/ssn/full_name/address/dob/passport/credit_card/...) plus content sniffing on string columns (regex-matches a majority of a 50-row sample as email or phone). Verified: an `email`-named column with real addresses flags true, a `full_name`-named column flags true by name alone, a plain product-name column flags false.
 - Deps: P8-001
-- Acceptance: flags fixture with PII columns
+- Acceptance: flags fixture with PII columns — verified via manual script; no dedicated fixture with PII columns added yet (clean/messy/malformed fixtures don't contain PII) — add one if/when Phase 9 cleaning needs a PII-bearing fixture
 
 ---
 

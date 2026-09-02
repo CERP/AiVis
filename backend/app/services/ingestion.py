@@ -15,8 +15,13 @@ from app.data.ingestion import (
     normalize_column_name,
     parse_to_dataframe,
 )
-from app.models.dataset import Dataset, DatasetColumn, DatasetStatus, DatasetVersion
-from app.repositories.dataset import DatasetColumnRepository, DatasetVersionRepository
+from app.insights.profiler import detect_pii, infer_semantic_type, profile_column
+from app.models.dataset import DataProfile, Dataset, DatasetColumn, DatasetStatus, DatasetVersion
+from app.repositories.dataset import (
+    DataProfileRepository,
+    DatasetColumnRepository,
+    DatasetVersionRepository,
+)
 from app.services.storage import get_storage_service
 
 
@@ -49,14 +54,35 @@ async def ingest_dataset(
         )
     )
 
+    dataset.status = DatasetStatus.PROFILING
+    session.add(dataset)
+    await session.commit()
+
     column_repo = DatasetColumnRepository(session)
-    for ordinal, (name, dtype) in enumerate(zip(df.columns, df.dtypes, strict=True)):
-        await column_repo.create(
+    profile_repo = DataProfileRepository(session)
+    for ordinal, name in enumerate(df.columns):
+        series = df[name]
+        semantic_type = infer_semantic_type(name, series)
+        is_pii = detect_pii(name, series)
+
+        column = await column_repo.create(
             DatasetColumn(
                 dataset_version_id=version.id,
                 name=name,
                 ordinal=ordinal,
-                raw_type=str(dtype),
+                raw_type=str(series.dtype),
+                semantic_type=semantic_type,
+                is_pii=is_pii,
+            )
+        )
+
+        profile = profile_column(series)
+        await profile_repo.create(
+            DataProfile(
+                dataset_column_id=column.id,
+                null_count=profile["null_count"],
+                unique_count=profile["unique_count"],
+                stats=profile["stats"],
             )
         )
 
