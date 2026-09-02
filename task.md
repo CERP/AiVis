@@ -196,20 +196,20 @@ Scope reminder: Chatbot / AI Visualization Copilot is FUTURE PHASE 2. Do not imp
 
 ### P5-001 — S3-compatible storage client abstraction
 
-- [ ] `services/storage.py` wrapping boto3, supports MinIO locally
-- Acceptance: upload/download/signed-url unit tests
+- [x] `app/services/storage.py`: boto3 S3 client wrapper (works against MinIO), `build_object_key` sanitizes client filenames (strips path separators, leading dots — path-traversal safe), upload/download/delete + `ensure_buckets`.
+- Acceptance: `tests/integration/test_storage.py` — 4/4 passing against live MinIO (bucket create, upload/download round-trip, path-traversal key sanitization, delete removes object)
 
 ### P5-002 — MinIO in docker-compose for local dev
 
-- [ ] Add service, bucket bootstrap script
+- [x] `minio` service added to `docker-compose.yml` (ports 9000/9001, healthcheck). Verified via `docker compose up -d minio` + integration test run, then torn down.
 - Deps: P1-010
-- Acceptance: local upload round-trip works
+- Acceptance: local upload round-trip works — verified
 
 ### P5-003 — Signed URL generation for upload/download
 
-- [ ] Presigned PUT/GET
+- [x] `presigned_put_url` / `presigned_get_url` on `StorageService`
 - Deps: P5-001
-- Acceptance: tested via integration test
+- Acceptance: tested via integration test — verified
 
 ---
 
