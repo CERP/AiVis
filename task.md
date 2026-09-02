@@ -335,9 +335,9 @@ Scope reminder: Chatbot / AI Visualization Copilot is FUTURE PHASE 2. Do not imp
 
 ### P9-005 — Frontend cleaning review UI (accept/reject suggestions)
 
-- [ ] Not started
+- [x] `frontend/src/lib/cleaning-suggestions.ts::computeCleaningSuggestions` + a "Suggested cleanup" section on the dataset detail page. **Important correction found while building this:** the suggestions can't be driven by `semantic_type` the way I first wrote them — the backend profiler (Phase 8) only ever assigns `numeric`/`currency`/`date` to columns whose *dtype* is already numeric/date; a messy text-stored number is classified `text`/`categorical`, never `currency`. Suggestions are keyed on `raw_type == Utf8` + column-name hints instead (mirroring the profiler's own `_looks_like_currency`-style heuristics), which is what actually matches how the real pipeline classifies messy columns. Accept-only (click "Apply"); no reject/dismiss action — a suggestion just re-computes to nothing once the column's `raw_type` is no longer `Utf8`, which happens automatically.
 - Deps: P9-004
-- Acceptance: manual browser test
+- Acceptance: manual browser test — **verified fully live**: uploaded a messy CSV (`$1,200.50`-style revenue, mixed date formats) with backend+Postgres+MinIO+frontend running together, saw both suggestions ("Parse date" / "Convert revenue to numbers") render correctly, clicked "Convert revenue to numbers", and confirmed the profile updated live: `revenue`'s semantic_type flipped from `text` to `currency`, "6 valid, 0 invalid" reported, and the applied suggestion correctly disappeared from the list (only the still-unapplied date suggestion remained). Zero console errors.
 
 ---
 

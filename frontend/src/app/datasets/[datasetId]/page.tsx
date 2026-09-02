@@ -10,6 +10,7 @@ import { EmptyState, ErrorState, ProcessingState } from "@/components/ui/states"
 import { Headline, SectionHeading, Subtitle } from "@/components/ui/typography";
 import { ApiError } from "@/lib/api/client";
 import { getDataset } from "@/lib/api/datasets";
+import { applyCleaning } from "@/lib/api/cleaning";
 import {
   analyzeInsights,
   analyzeStories,
@@ -19,6 +20,7 @@ import {
 } from "@/lib/api/insights";
 import { createVisualization } from "@/lib/api/visualizations";
 import type { VisualizationRecommendation } from "@/lib/api/types";
+import { computeCleaningSuggestions } from "@/lib/cleaning-suggestions";
 
 export default function DatasetDetailPage() {
   const params = useParams<{ datasetId: string }>();
@@ -74,6 +76,18 @@ export default function DatasetDetailPage() {
     },
   });
 
+  const cleaningMutation = useMutation({
+    mutationFn: (payload: { operation_type: string; column_name: string }) =>
+      applyCleaning(datasetId, payload),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["profile", datasetId] });
+    },
+  });
+
+  const suggestions = profileQuery.data
+    ? computeCleaningSuggestions(profileQuery.data.columns)
+    : [];
+
   return (
     <AppShell>
       <section className="mx-auto flex max-w-6xl flex-col gap-8 px-6 py-16">
@@ -112,6 +126,53 @@ export default function DatasetDetailPage() {
                 </p>
               </div>
             ))}
+          </div>
+        )}
+
+        {suggestions.length > 0 && (
+          <div className="flex flex-col gap-3">
+            <SectionHeading as="h2" className="text-lg">
+              Suggested cleanup
+            </SectionHeading>
+            <div className="flex flex-col gap-2">
+              {suggestions.map((s) => (
+                <div
+                  key={`${s.columnName}-${s.operationType}`}
+                  className="flex items-center justify-between gap-4 rounded-[var(--radius-token)] border border-border p-3"
+                >
+                  <div>
+                    <p className="text-sm font-medium">{s.label}</p>
+                    <p className="text-xs text-muted-foreground">{s.reason}</p>
+                  </div>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled={cleaningMutation.isPending}
+                    onClick={() =>
+                      cleaningMutation.mutate({
+                        operation_type: s.operationType,
+                        column_name: s.columnName,
+                      })
+                    }
+                  >
+                    Apply
+                  </Button>
+                </div>
+              ))}
+            </div>
+            {cleaningMutation.isSuccess && (
+              <p className="text-xs text-positive">
+                Applied — {cleaningMutation.data.valid_count} valid,{" "}
+                {cleaningMutation.data.invalid_count} invalid values.
+              </p>
+            )}
+            {cleaningMutation.isError && (
+              <p role="alert" className="text-sm text-negative">
+                {cleaningMutation.error instanceof ApiError
+                  ? cleaningMutation.error.detail
+                  : "Couldn't apply that cleaning step."}
+              </p>
+            )}
           </div>
         )}
 
@@ -167,12 +228,12 @@ export default function DatasetDetailPage() {
                 <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
                   {recommendationsQuery.data.derived.map((rec, index) => (
                     <RecommendationCard
-                    key={rec.story_id}
-                    recommendation={rec}
-                    index={index}
-                    onOpenStudio={(r) => openInStudio.mutate(r)}
-                    isOpeningStudio={openInStudio.isPending}
-                  />
+                      key={rec.story_id}
+                      recommendation={rec}
+                      index={index}
+                      onOpenStudio={(r) => openInStudio.mutate(r)}
+                      isOpeningStudio={openInStudio.isPending}
+                    />
                   ))}
                 </div>
               </div>
