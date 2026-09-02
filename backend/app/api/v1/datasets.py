@@ -6,6 +6,8 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 from app.api.deps import get_current_organization_id
 from app.core.config import get_settings
 from app.core.db import get_session
+from app.data.duckdb_engine import query_parquet_bytes
+from app.data.duckdb_engine import row_count as parquet_row_count
 from app.data.ingestion import IngestionError as ParseError
 from app.data.upload_validation import UploadValidationError, validate_upload
 from app.models.dataset import Dataset, DatasetStatus
@@ -22,6 +24,7 @@ from app.schemas.dataset import DatasetResponse
 from app.schemas.insight import InsightResponse
 from app.schemas.profile import ColumnProfileResponse, DatasetProfileResponse
 from app.schemas.recommendation import RecommendationsResponse, VisualizationRecommendationResponse
+from app.schemas.rows import DatasetRowsResponse
 from app.schemas.story import StoryResponse
 from app.services.cleaning import CleaningError, apply_cleaning_operation
 from app.services.ingestion import ingest_dataset
@@ -355,6 +358,37 @@ async def get_visualization_recommendations(
     return RecommendationsResponse(
         top=[VisualizationRecommendationResponse(**r.__dict__) for r in top],
         derived=[VisualizationRecommendationResponse(**r.__dict__) for r in derived],
+    )
+
+
+@router.get("/{dataset_id}/rows", response_model=DatasetRowsResponse)
+async def get_dataset_rows(
+    dataset_id: uuid.UUID,
+    limit: int = 500,
+    organization_id: uuid.UUID = Depends(get_current_organization_id),
+    session: AsyncSession = Depends(get_session),
+) -> DatasetRowsResponse:
+    """Bounded row sample for rendering/preview only -- never the full dataset. `limit` is
+    capped server-side so a client can't force-load an unbounded amount of data."""
+    dataset = await DatasetRepository(session).get(dataset_id)
+    if dataset is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Dataset not found")
+    await _require_project(dataset.project_id, organization_id, session)
+
+    version = await DatasetVersionRepository(session).get_latest(dataset_id)
+    if version is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No dataset version")
+
+    capped_limit = min(max(limit, 1), 2000)
+    storage = get_storage_service()
+    parquet_bytes = storage.download_bytes(storage.bucket_processed, version.parquet_object_key)
+    rows = query_parquet_bytes(parquet_bytes, f"SELECT * FROM t LIMIT {capped_limit}")
+
+    return DatasetRowsResponse(
+        dataset_version_id=str(version.id),
+        total_row_count=parquet_row_count(parquet_bytes),
+        returned_row_count=len(rows),
+        rows=rows,
     )
 
 

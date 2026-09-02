@@ -590,7 +590,7 @@ Scope reminder: Chatbot / AI Visualization Copilot is FUTURE PHASE 2. Do not imp
 
 ### P18-001 — Recommendation card component (preview, name, question, explanation, why-recommended, confidence, related insight)
 
-- [x] `frontend/src/components/recommendations/recommendation-card.tsx` — chart-type glyph header, title, confidence badge, chart-type label, analytical question, explanation, why-recommended note. __Gap:__ no live mini-chart preview (spec says "visualization preview") — the recommendation API response only carries the `VisualizationSpec`, not row data, so there's nothing to render yet; would need either a new preview-rows endpoint or reusing `/profile` sample data. Using a static chart-type glyph as a placeholder instead of guessing at fabricated preview data.
+- [x] `frontend/src/components/recommendations/recommendation-card.tsx` — chart-type glyph header, title, confidence badge, chart-type label, analytical question, explanation, why-recommended note. Still uses a static glyph, not a live mini-chart — `GET /api/datasets/:id/rows` (bounded sample, server-capped at 2000 rows) now exists to make that possible, verified live (correct values, correct capping), but wiring it into the card itself is a follow-up, not done this session.
 - Deps: P17-005, P16-*
 - Acceptance: renders 8 cards from API data — originally verified with mock-shaped data only (frontend auth didn't exist yet); __now superseded__: `frontend/src/app/datasets/[datasetId]/page.tsx` wires this card to the real live pipeline (see new note below), verified against a real uploaded dataset end-to-end.
 
