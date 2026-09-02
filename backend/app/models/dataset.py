@@ -27,7 +27,10 @@ class Dataset(TimestampedModel, table=True):
     error_message: str | None = Field(default=None, max_length=2000)
 
     project: "Project" = Relationship(back_populates="datasets")  # noqa: F821
-    versions: list["DatasetVersion"] = Relationship(back_populates="dataset")
+    versions: list["DatasetVersion"] = Relationship(
+        back_populates="dataset",
+        sa_relationship_kwargs={"cascade": "all, delete-orphan"},
+    )
 
 
 class DatasetVersion(TimestampedModel, table=True):
@@ -44,8 +47,14 @@ class DatasetVersion(TimestampedModel, table=True):
     parent_version_id: uuid.UUID | None = Field(default=None, foreign_key="dataset_versions.id")
 
     dataset: Dataset = Relationship(back_populates="versions")
-    columns: list["DatasetColumn"] = Relationship(back_populates="dataset_version")
-    cleaning_operations: list["CleaningOperation"] = Relationship(back_populates="dataset_version")
+    columns: list["DatasetColumn"] = Relationship(
+        back_populates="dataset_version",
+        sa_relationship_kwargs={"cascade": "all, delete-orphan"},
+    )
+    cleaning_operations: list["CleaningOperation"] = Relationship(
+        back_populates="dataset_version",
+        sa_relationship_kwargs={"cascade": "all, delete-orphan"},
+    )
 
 
 class DatasetColumn(TimestampedModel, table=True):
@@ -59,7 +68,10 @@ class DatasetColumn(TimestampedModel, table=True):
     is_pii: bool = Field(default=False)
 
     dataset_version: DatasetVersion = Relationship(back_populates="columns")
-    profile: "DataProfile" = Relationship(back_populates="column")
+    profile: "DataProfile" = Relationship(
+        back_populates="column",
+        sa_relationship_kwargs={"cascade": "all, delete-orphan"},
+    )
 
 
 class DataProfile(TimestampedModel, table=True):

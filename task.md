@@ -239,6 +239,7 @@ Scope reminder: Chatbot / AI Visualization Copilot is FUTURE PHASE 2. Do not imp
 - Acceptance: integration test creates dataset row + object — verified against live Postgres + MinIO, then torn down
 
 ### Test fixtures added this session
+
 - [x] `tests/fixtures/clean.csv`, `messy.csv` (inconsistent headers/dates/casing/duplicates/missing values), `malformed.csv` (broken quoting, ragged row). Still need: `large.csv`, `dates.csv`, `categorical.csv`, `geographic.csv`, `financial.csv` — add when Phase 7/8 (ingestion/profiling) need them.
 
 ---
@@ -247,25 +248,28 @@ Scope reminder: Chatbot / AI Visualization Copilot is FUTURE PHASE 2. Do not imp
 
 ### P7-001 — CSV/Excel/JSON ingestion via Polars
 
-- [ ] Parse into Arrow/Parquet, handle nested JSON
+- [x] `app/data/ingestion.py::parse_to_dataframe` — csv/tsv/json via Polars, xlsx/xls via `fastexcel` engine. Column names normalized to snake_case + de-duplicated before Parquet write. Nested JSON: Polars `read_json` handles it structurally (nested fields become Struct/List columns); no flattening logic yet — deferred until Phase 10 structuring needs it.
 - Deps: P6-004
-- Acceptance: fixture datasets ingest without error
+- Acceptance: fixture datasets ingest without error — verified live (clean.csv, messy.csv both parse; messy columns intentionally stay string-typed pending Phase 9 cleaning)
 
 ### P7-002 — Convert to Parquet, store processed version
 
-- [ ] `data/ingestion.py`
-- Acceptance: parquet file in object storage, dataset_versions row
+- [x] `app/services/ingestion.py::ingest_dataset` — parses upload, writes Parquet, uploads to the processed bucket, creates `DatasetVersion` (v0, `is_raw=True`) + one `DatasetColumn` row per column. Wired synchronously into `POST /api/datasets` (no worker queue yet — Phase 27 concern once dataset size warrants it). Dataset status flow: `uploading` → `ingesting` → `ready`/`failed`.
+- Acceptance: parquet file in object storage, dataset_versions row — verified via `tests/integration/test_ingestion.py` (row_count/column_count/is_raw asserted) against live Postgres + MinIO
 
 ### P7-003 — DuckDB query layer over Parquet
 
-- [ ] `data/duckdb_engine.py`
-- Acceptance: sample query returns rows
+- [x] `app/data/duckdb_engine.py`: `query_parquet_bytes` (registers an Arrow table from Parquet bytes, runs caller-constructed SQL — never raw user input), `row_count`. Verified manually with a GROUP BY aggregation against clean.csv's parquet output.
+- Acceptance: sample query returns rows — verified
 
 ### P7-004 — Malformed file handling
 
-- [ ] Graceful errors, partial parse reporting
+- [x] Polars parse failures wrapped as `IngestionError` with a structured message (not a raw traceback). On ingest failure the dataset is marked `status=failed` with `error_message` set, not silently dropped or left stuck.
 - Deps: P7-001
-- Acceptance: malformed.csv fixture produces structured error, not crash
+- Acceptance: malformed.csv fixture produces structured error, not crash — verified via `test_malformed_csv_marks_dataset_failed` (upload endpoint still returns 201 with the dataset row; status reflects failure)
+
+### Bug fixed this session: cascade delete
+- [x] `DELETE /api/datasets/:id` was raising a Postgres NOT NULL violation on `dataset_versions.dataset_id` because SQLAlchemy tried to null out child FKs on parent delete with no cascade configured. Fixed by adding `cascade="all, delete-orphan"` to the `Dataset.versions`, `DatasetVersion.columns`, `DatasetVersion.cleaning_operations`, and `DatasetColumn.profile` relationships (ORM-level, no migration needed — DB schema unchanged). Verified via the full upload/list/get/delete integration test.
 
 ---
 

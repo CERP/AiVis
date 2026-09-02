@@ -9,6 +9,7 @@ psycopg2-binary
 alembic
 redis
 polars
+fastexcel
 duckdb
 pyarrow
 boto3

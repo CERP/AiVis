@@ -58,7 +58,7 @@ async def test_upload_clean_csv(client: AsyncClient) -> None:
         body = resp.json()
         assert body["original_filename"] == "clean.csv"
         assert body["size_bytes"] > 0
-        assert body["status"] == "uploading"
+        assert body["status"] == "ready"
 
         listed = await c.get("/api/datasets", params={"project_id": project_id}, headers=headers)
         assert listed.status_code == 200

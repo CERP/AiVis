@@ -6,11 +6,13 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 from app.api.deps import get_current_organization_id
 from app.core.config import get_settings
 from app.core.db import get_session
+from app.data.ingestion import IngestionError as ParseError
 from app.data.upload_validation import UploadValidationError, validate_upload
 from app.models.dataset import Dataset, DatasetStatus
 from app.repositories.dataset import DatasetRepository
 from app.repositories.project import ProjectRepository
 from app.schemas.dataset import DatasetResponse
+from app.services.ingestion import ingest_dataset
 from app.services.storage import get_storage_service
 
 router = APIRouter(prefix="/datasets", tags=["datasets"])
@@ -43,7 +45,7 @@ async def upload_dataset(
     data = await file.read()
 
     try:
-        _extension, sniffed_mime = validate_upload(
+        extension, sniffed_mime = validate_upload(
             filename=file.filename, data=data, max_size_bytes=max_size_bytes
         )
     except UploadValidationError as exc:
@@ -66,10 +68,23 @@ async def upload_dataset(
     object_key = storage.build_object_key(uuid.uuid4(), file.filename)
     storage.ensure_buckets()
     storage.upload_bytes(storage.bucket_raw, object_key, data, sniffed_mime)
-
     dataset.raw_object_key = object_key
-    dataset.status = DatasetStatus.UPLOADING
-    return await dataset_repo.create(dataset)
+    dataset = await dataset_repo.create(dataset)
+
+    dataset.status = DatasetStatus.INGESTING
+    session.add(dataset)
+    await session.commit()
+
+    try:
+        await ingest_dataset(session, dataset, extension, data)
+    except ParseError as exc:
+        dataset.status = DatasetStatus.FAILED
+        dataset.error_message = exc.message
+        session.add(dataset)
+        await session.commit()
+
+    await session.refresh(dataset)
+    return dataset
 
 
 @router.get("", response_model=list[DatasetResponse])
