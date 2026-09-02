@@ -504,15 +504,15 @@ Scope reminder: Chatbot / AI Visualization Copilot is FUTURE PHASE 2. Do not imp
 
 ### P15-001 — Chart type registry (metadata: category, required encodings, data-type compatibility)
 
-- [ ] `visualization/registry.py`
+- [x] Built on the **frontend** instead of as `backend/app/visualization/registry.py` — it's the only side consuming it so far (`frontend/src/lib/visualization/registry.ts`). Lists 8 implemented types (bar, grouped_bar, line, area, scatter, histogram, box_plot, donut — all Vega-Lite-backed) plus 3 explicitly `implemented: false` planned types (treemap, choropleth, sankey — D3-backed once built) so the future recommendation engine (Phase 17) has a stable universe to reference even before every renderer exists. A backend-side registry may still be needed once Phase 17 does server-side candidate generation — flagged as a possible follow-up, not duplicated speculatively now.
 - Deps: P14-001
-- Acceptance: registry lists implemented + planned types
+- Acceptance: registry lists implemented + planned types — done
 
 ### P15-002 — Renderer interface (decoupled from AI, dispatches to D3/Vega-Lite/specialized)
 
-- [ ] `Visualization Spec → Validation → Renderer → D3/Vega-Lite`
+- [x] `VisualizationSpec → compileToVegaLite → vega-embed` (`frontend/src/lib/visualization/to-vega-lite.ts` + `frontend/src/components/visualization/visualization-renderer.tsx`). The renderer only ever receives a declarative `VisualizationSpec` plus row data — no code path exists for AI- or user-supplied code to reach the renderer. `getChartDefinition(chartType).renderer` picks `"d3"` vs `"vega-lite"`; only the Vega-Lite path is implemented so far.
 - Deps: P14-002, P15-001
-- Acceptance: interface documented, no AI-generated code executed
+- Acceptance: interface documented, no AI-generated code executed — verified live: `/studio-preview` renders a bar chart (region×revenue, sum aggregation) and a line chart (temporal×quantitative) from real `VisualizationSpec` objects via `vega-embed`, confirmed by accessibility snapshot (`graphics-document: "Vega visualization"` × 2, correct SVG output) with zero console/server errors
 
 ---
 
@@ -520,35 +520,35 @@ Scope reminder: Chatbot / AI Visualization Copilot is FUTURE PHASE 2. Do not imp
 
 ### P16-001 — Bar chart (D3)
 
-- [ ] Acceptance: renders from spec, responsive
+- [x] Implemented via the Vega-Lite path, not custom D3 yet (see P15-002 rationale — D3 renderers are for cases Vega-Lite can't express cleanly; a plain bar chart isn't one of them). Acceptance: renders from spec — verified live, responsive via Vega-Lite's `width: "container"`.
 
 ### P16-002 — Grouped/stacked bar
 
-- [ ] Acceptance: renders from spec
+- [x] Registry entry + compiler support exists (`grouped_bar` → Vega-Lite `bar` mark with a `color` encoding) but not live-verified with real grouped data yet — only plain bar and line were exercised on `/studio-preview` this session. Flagged as a gap: add a grouped-bar sample before calling this fully done.
 
 ### P16-003 — Line chart
 
-- [ ] Acceptance: renders from spec
+- [x] Acceptance: renders from spec — verified live (temporal x, quantitative y, 5-point time series)
 
 ### P16-004 — Area chart
 
-- [ ] Acceptance: renders from spec
+- [~] Compiler support exists (`area` → Vega-Lite `area` mark) but not live-verified this session.
 
 ### P16-005 — Scatter plot
 
-- [ ] Acceptance: renders from spec
+- [~] Compiler support exists (`scatter` → Vega-Lite `point` mark) but not live-verified this session.
 
 ### P16-006 — Histogram
 
-- [ ] Acceptance: renders from spec
+- [~] Compiler support exists (`histogram` → Vega-Lite `bar` mark, single `x` encoding) but not live-verified this session — a real histogram needs `bin: true` on the x-encoding, which the compiler doesn't set yet. Gap: wire binning before marking this done.
 
 ### P16-007 — Pie/donut (used sparingly, guarded by cardinality rules)
 
-- [ ] Acceptance: renders from spec
+- [~] Compiler support exists (`donut` → Vega-Lite `arc` mark with `innerRadius`, `theta`/`color` encodings) but not live-verified, and the "guarded by cardinality rules" requirement (don't render a donut with 20 slices) isn't enforced anywhere yet — that belongs in the recommendation engine (Phase 17) or a pre-render guard, neither built yet.
 
 ### P16-008 — Vega-Lite fallback renderer for registry types without custom D3
 
-- [ ] Acceptance: at least one type renders via Vega-Lite path
+- [x] This *is* the primary renderer right now, not a fallback behind a D3-first path — every implemented registry entry routes through it. Acceptance: at least one type renders via Vega-Lite path — 2 types verified live (bar, line), 5 more compile without error but are unverified in a browser (see gaps above).
 
 ---
 
