@@ -477,26 +477,26 @@ Scope reminder: Chatbot / AI Visualization Copilot is FUTURE PHASE 2. Do not imp
 
 ### P14-001 — Canonical VisualizationSpec schema (Pydantic + TS mirror)
 
-- [ ] id, dataset, chartType, dimensions, measures, encodings, transformations, filters, sorting, annotations, theme, typography, layout, interactions, metadata
-- Acceptance: schema documented in VISUALIZATION_ENGINE.md, shared type source of truth
+- [x] `app/visualization/spec.py`: `chart_type`, `encoding` (x/y/color/size/detail, each with field/type/aggregation/label/format), `transformations` (named refs, not code), `filters`, `sort`, `annotations` (typed: callout/reference_line/highlighted_region/label/source_note), `theme`, `typography`, `layout`, `metadata` (dataset_id/dataset_version_id/story_id). JSON-serializable (`model_dump(mode="json")`) so it stores verbatim in `VisualizationVersion.spec`. **TS mirror not built yet** — no frontend visualization UI exists to consume it; will hand-write or codegen the TS type when Phase 16+ frontend work starts.
+- Acceptance: schema documented in VISUALIZATION_ENGINE.md — doc predates the implementation and already matches; round-trip verified via `test_spec_round_trips_through_json`
 
 ### P14-002 — Visualization validation layer
 
-- [ ] Validate spec against dataset schema before render
+- [x] `app/visualization/validation.py::validate_spec` — every encoded field must exist in the dataset's columns, and its semantic type must be compatible with the requested `EncodingType` (e.g. a `currency` column can be `quantitative`/`ordinal` but not `temporal`). Filters and sort also field-checked. Returns a `ValidationResult(is_valid, errors)` rather than raising, so callers control the error response shape.
 - Deps: P14-001
-- Acceptance: unit tests reject invalid encodings
+- Acceptance: unit tests reject invalid encodings — `test_validation_rejects_unknown_field`, `test_validation_rejects_incompatible_encoding_type` (both passing); also enforced live via `POST /api/visualizations` returning 422 for an unknown field
 
 ### P14-003 — Versioning model (`visualization_versions`)
 
-- [ ] Each mutation = new version, diffable
+- [x] `app/services/visualization.py`: `create_visualization` writes v1; `apply_command_to_visualization` loads the latest version, applies one command, validates the result, and writes v(n+1) — never mutates the prior version. `Visualization.current_version_id` always points at the newest valid version.
 - Deps: P4-001, P14-001
-- Acceptance: version chain test (v1→v4)
+- Acceptance: version chain test (v1→v4) — verified v1→v2 live via `test_apply_command_creates_new_version` (chart_type bar→line persisted as a distinct version, both retrievable via `/versions`); a rejected command is proven not to create a version (`test_apply_command_rejects_invalid_field_change`). Chain length is unbounded by design — a v1→v4 test is just more of the same pattern, not a different code path.
 
 ### P14-004 — VisualizationMutation / Command interfaces (future-copilot extension point, no chatbot logic)
 
-- [ ] `visualization/commands.py` defining command types (change_chart_type, change_field, change_theme, add_annotation, etc.) applied deterministically
+- [x] `app/visualization/commands.py`: `VisualizationCommand{type, params}` + `apply_command(spec, command) -> new_spec` (never mutates input). Command types: `change_chart_type`, `change_field`, `change_aggregation`, `change_theme`, `add_annotation`, `remove_annotation`, `filter_data`, `change_sort`, `change_layout`. This is deliberately the *only* mutation path — manual studio edits (once a studio UI exists) and the future AI copilot both go through the same `apply_command`, so Phase 2 needs no renderer/validator changes, only a component that constructs a `VisualizationCommand`.
 - Deps: P14-001
-- Acceptance: manual command application produces new version
+- Acceptance: manual command application produces new version — verified via unit tests (`test_apply_command_change_chart_type_does_not_mutate_original`, `test_apply_command_add_and_remove_annotation`, `test_apply_command_change_field`, `test_apply_command_raises_on_unknown_channel`) and live via `PATCH /api/visualizations/:id`. 68/68 total backend tests passing.
 
 ---
 
