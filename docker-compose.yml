@@ -9,6 +9,7 @@ services:
       - "55433:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
+      - ./infra/postgres-init:/docker-entrypoint-initdb.d
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U aivis"]
       interval: 5s

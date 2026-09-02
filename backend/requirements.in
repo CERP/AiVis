@@ -2,6 +2,7 @@ fastapi
 uvicorn[standard]
 pydantic>=2
 pydantic-settings
+email-validator
 sqlmodel
 asyncpg
 psycopg2-binary
@@ -12,7 +13,7 @@ duckdb
 pyarrow
 boto3
 python-multipart
-passlib[bcrypt]
+bcrypt
 python-jose[cryptography]
 google-generativeai
 httpx

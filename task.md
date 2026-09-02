@@ -88,9 +88,9 @@ Scope reminder: Chatbot / AI Visualization Copilot is FUTURE PHASE 2. Do not imp
 
 ### P1-010 — Docker Compose for local infra (Postgres, Redis, backend, worker)
 
-- [x] `docker-compose.yml` at root with postgres, redis, minio, backend, worker services + healthchecks
+- [x] `docker-compose.yml` at root with postgres, redis, minio, backend, worker services + healthchecks. Postgres host port moved to 55433 (5432 was already taken by another local container). Added `infra/postgres-init/001-create-test-db.sql` so a fresh container also provisions `aivis_test`, keeping integration-test `create_all`/`drop_all` cycles off the dev DB Alembic manages.
 - Deps: P1-006
-- Acceptance: compose file written; `docker compose up` not run in this session (no daemon check performed) — verify before relying on it
+- Acceptance: `docker compose up -d postgres` verified repeatedly this session (migrations, repo tests, auth tests all ran against it); `redis`/`backend`/`worker` services defined but not yet started/tested
 
 ### P1-011 — .gitignore (root)
 
@@ -144,25 +144,25 @@ Scope reminder: Chatbot / AI Visualization Copilot is FUTURE PHASE 2. Do not imp
 
 ### P3-001 — Auth data model (users, sessions)
 
-- [ ] SQLModel models
-- Acceptance: migration created
+- [x] `User`, `Organization`, `Membership` SQLModel models (Phase 4); no separate sessions table — JWT bearer tokens are stateless for now
+- Acceptance: migration created — covered by `f1c76e675d43_init_schema`
 
 ### P3-002 — Auth endpoints (signup/login/logout/session)
 
-- [ ] FastAPI routes, password hashing (passlib/bcrypt), JWT or session cookie
+- [x] `app/api/v1/auth.py`: `POST /api/auth/signup` (creates user + owner-role org + membership), `POST /api/auth/login`, `GET /api/auth/me`. Password hashing via `bcrypt` directly (`app/core/security.py`) — switched off passlib's `CryptContext` after hitting a known passlib/bcrypt≥4.1 compatibility bug (`ValueError: password cannot be longer than 72 bytes`) triggered by passlib's internal self-test, unrelated to actual input length. JWT via `python-jose`. No logout endpoint yet (stateless tokens — nothing to invalidate server-side without a blocklist, deferred).
 - Deps: P3-001, P4-*
-- Acceptance: integration tests pass
+- Acceptance: integration tests pass — `tests/integration/test_auth_api.py` (signup/me/401/bad-login/good-login/duplicate-email), plus manual live curl run against uvicorn+Postgres, all verified
 
 ### P3-003 — Frontend auth flow (login/signup pages, session state)
 
-- [ ] Pages + Zustand auth store + TanStack Query hooks
+- [ ] Not started
 - Deps: P3-002
 - Acceptance: manual login works in browser
 
 ### P3-004 — Route protection (frontend middleware, backend dependency)
 
-- [ ] Next.js middleware + FastAPI `Depends(get_current_user)`
-- Acceptance: unauthenticated access blocked
+- [~] Backend: `app/api/deps.py::get_current_user` (HTTPBearer + JWT decode) — done, verified. Frontend middleware not started.
+- Acceptance: unauthenticated access blocked — verified for backend (`/api/auth/me` returns 401 without token)
 
 ---
 

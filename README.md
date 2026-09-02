@@ -69,7 +69,9 @@ docker compose up
 
 ## Testing
 
-- Backend: `cd backend && pytest`
+- Backend: `cd backend && pytest`. Integration tests need Postgres (`docker compose up -d postgres`,
+  which also provisions a separate `aivis_test` database via `infra/postgres-init/`) and, for
+  storage tests, MinIO (`docker compose up -d minio`).
 - Frontend: `cd frontend && npm test` (Vitest, once added)
 - E2E: Playwright (once added)
 

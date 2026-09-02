@@ -7,7 +7,7 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 
 import app.models  # noqa: F401  registers tables on SQLModel.metadata
 
-TEST_DATABASE_URL = "postgresql+asyncpg://aivis:aivis@localhost:55433/aivis"
+TEST_DATABASE_URL = "postgresql+asyncpg://aivis:aivis@localhost:55433/aivis_test"
 
 
 @pytest_asyncio.fixture
