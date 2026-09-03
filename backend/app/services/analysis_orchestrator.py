@@ -128,6 +128,7 @@ async def run_analysis(session: AsyncSession, analysis: Analysis, version: Datas
                     "column": issue.column,
                     "description": issue.description,
                     "severity": issue.severity,
+                    "recommendation": issue.recommendation,
                 }
                 for issue in data_quality.issues
             ],

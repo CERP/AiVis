@@ -91,7 +91,15 @@ def _build_spec(
         else:
             x_field, x_type, y_field, y_type = field_a, enc_a, field_b, enc_b
 
-        aggregatable_charts = {"bar", "grouped_bar", "line", "area"}
+        # Chart types requiring a third (color) encoding -- stacked_bar, stacked_bar_horizontal,
+        # heatmap, bubble -- aren't generated here: the deterministic Story pipeline only ever
+        # carries a 1-2 field pair, and validate_spec() would correctly reject a 3-encoding
+        # chart type missing its color/size requirement. Those remain manual-studio-only until
+        # a 3-field Story path exists.
+        aggregatable_charts = {
+            "bar", "grouped_bar", "horizontal_bar", "sorted_bar",
+            "line", "area", "sparkline", "waterfall",
+        }
         is_aggregatable = y_type == EncodingType.QUANTITATIVE and chart_type in aggregatable_charts
         aggregation = "sum" if is_aggregatable else "none"
         encoding.x = Encoding(field=x_field, type=x_type)

@@ -20,6 +20,20 @@ _DATE_VALUE_RE = re.compile(
 
 _SEVERITY_PENALTY = {"high": 15, "medium": 8, "low": 3}
 
+# One actionable next step per issue type -- distinct from `description` (what was found).
+# Matches the worked example in the pipeline spec: a finding plus a concrete recommendation,
+# not just a bare observation.
+_RECOMMENDATIONS: dict[str, str] = {
+    "duplicate_rows": "Review and deduplicate before aggregating, or confirm duplicates expected.",
+    "empty_column": "Exclude this column from analysis, or investigate why it's always empty.",
+    "missing_values": "Decide whether to impute, exclude, or filter rows with missing values.",
+    "constant_column": "This column carries no analytical signal -- exclude it from charts.",
+    "inconsistent_categories": "Normalize casing and whitespace before grouping by this field.",
+    "high_cardinality": "Consider grouping into fewer categories, or treat as an identifier.",
+    "invalid_dates": "Review and standardize the date format before using this as a time field.",
+    "outliers": "Investigate whether these are data errors or genuine extremes before averaging.",
+}
+
 
 @dataclass
 class ColumnQualityInput:
@@ -39,6 +53,11 @@ class DataQualityIssue:
     description: str
     severity: str  # "low" | "medium" | "high"
     column: str | None = None
+    recommendation: str = ""
+
+    def __post_init__(self) -> None:
+        if not self.recommendation:
+            self.recommendation = _RECOMMENDATIONS.get(self.type, "")
 
 
 @dataclass
@@ -115,7 +134,12 @@ def _column_issues(
 
     non_empty_count = row_count - col.null_count
 
-    if col.semantic_type == "categorical" and col.name in df.columns:
+    # Case/whitespace inconsistency applies to any short-text dimension, not just fields the
+    # profiler happened to label "categorical" -- a "state"/"country"/"city" column classifies
+    # as "geographic" instead (name-hint based, app/insights/profiler.py) but is exactly as
+    # susceptible to "NY" vs "ny" duplicates. Found via live E2E testing during this audit: a
+    # `state` column with intentional casing inconsistency produced zero findings before this fix.
+    if col.semantic_type in ("categorical", "geographic") and col.name in df.columns:
         non_null = df[col.name].drop_nulls()
         if len(non_null) > 0:
             normalized_unique = non_null.str.to_lowercase().str.strip_chars().n_unique()
@@ -131,6 +155,7 @@ def _column_issues(
                     )
                 )
 
+    if col.semantic_type == "categorical" and col.name in df.columns:
         if non_empty_count > 20 and col.unique_count / non_empty_count > 0.9:
             issues.append(
                 DataQualityIssue(

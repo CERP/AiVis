@@ -159,3 +159,15 @@ async def test_retry_requires_failed_status(client: AsyncClient) -> None:
 
         resp = await c.post(f"/api/datasets/{dataset['id']}/analysis/retry", headers=headers)
         assert resp.status_code == 409
+
+
+async def test_failed_ingestion_never_creates_a_phantom_analysis(client: AsyncClient) -> None:
+    """Analysis is only created after ingestion reaches READY (app/api/v1/datasets.py --
+    upload_dataset returns early on ParseError, before AnalysisRepository.create() runs). A
+    malformed upload must not leave behind a queued Analysis that can never actually process."""
+    async with client as c:
+        dataset, headers = await _signup_and_upload(c, "auto5@example.com", "malformed.csv")
+        assert dataset["status"] == "failed"
+
+        resp = await c.get(f"/api/datasets/{dataset['id']}/analysis", headers=headers)
+        assert resp.status_code == 404

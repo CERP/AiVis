@@ -13,13 +13,27 @@ import type { Annotation, Encoding, VisualizationSpec } from "./spec";
 const CHART_TYPE_TO_MARK: Record<string, string> = {
   bar: "bar",
   grouped_bar: "bar",
+  stacked_bar: "bar",
+  horizontal_bar: "bar",
+  stacked_bar_horizontal: "bar",
+  sorted_bar: "bar",
+  waterfall: "bar",
   line: "line",
   area: "area",
+  sparkline: "line",
   scatter: "point",
+  bubble: "point",
   histogram: "bar",
   box_plot: "boxplot",
   donut: "arc",
+  pie: "arc",
+  heatmap: "rect",
 };
+
+/** Chart types whose x/y are swapped relative to their vertical counterpart -- a horizontal
+ * bar is mathematically identical to a vertical one with the two channels exchanged, so this
+ * is a real, correct transformation, not an approximation. */
+const HORIZONTAL_ORIENTATION_CHARTS = new Set(["horizontal_bar", "stacked_bar_horizontal"]);
 
 const AGGREGATION_MAP: Record<string, string | undefined> = {
   none: undefined,
@@ -93,16 +107,33 @@ export function compileToVegaLite(
   theme?: ThemeTokens
 ): TopLevelSpec {
   const mark = CHART_TYPE_TO_MARK[spec.chart_type] ?? "bar";
+  const isPieFamily = spec.chart_type === "donut" || spec.chart_type === "pie";
+  const isHorizontal = HORIZONTAL_ORIENTATION_CHARTS.has(spec.chart_type);
 
   const encoding: Record<string, unknown> = {};
-  const x = compileEncoding(spec.encoding.x);
-  const y = compileEncoding(spec.encoding.y);
+  let x = compileEncoding(spec.encoding.x);
+  let y = compileEncoding(spec.encoding.y);
   const color = compileEncoding(spec.encoding.color);
   const size = compileEncoding(spec.encoding.size);
 
-  if (spec.chart_type === "donut") {
+  // A horizontal bar is a vertical bar with x/y exchanged -- genuinely correct, not a visual
+  // approximation, since Vega-Lite's bar mark is symmetric in this respect.
+  if (isHorizontal) {
+    [x, y] = [y, x];
+  }
+
+  if (spec.chart_type === "sorted_bar" && x && y) {
+    const categoricalEncoding = x.type === "quantitative" ? y : x;
+    categoricalEncoding.sort = spec.sort?.descending === false ? "y" : "-y";
+  }
+
+  if (isPieFamily) {
     if (size) encoding.theta = size;
     if (color) encoding.color = color;
+  } else if (spec.chart_type === "heatmap") {
+    if (x) encoding.x = x;
+    if (y) encoding.y = y;
+    if (color) encoding.color = { ...color, type: "quantitative" };
   } else {
     if (x) encoding.x = x;
     if (y) encoding.y = y;
@@ -110,17 +141,47 @@ export function compileToVegaLite(
     if (size) encoding.size = size;
   }
 
+  if (spec.chart_type === "sparkline") {
+    encoding.x = { ...(encoding.x as Record<string, unknown>), axis: null };
+    encoding.y = { ...(encoding.y as Record<string, unknown>), axis: null };
+  }
+
   const markColor = theme?.categorical_colors[0];
-  const markConfig =
-    spec.chart_type === "donut" ? { type: mark, innerRadius: 60 } : { type: mark };
+  const markConfig = isPieFamily
+    ? { type: mark, innerRadius: spec.chart_type === "donut" ? 60 : 0 }
+    : { type: mark };
+
+  // Waterfall: a real running-cumulative-total transform computed by Vega-Lite itself (a
+  // declarative window aggregate, not a client-side approximation) -- `start` is the
+  // cumulative total *before* this row, `cumulative` is the total *after*, so each bar spans
+  // exactly the right range regardless of row order in the data.
+  const waterfallTransform =
+    spec.chart_type === "waterfall" && y
+      ? [
+          { window: [{ op: "sum", field: y.field, as: "cumulative" }], frame: [null, 0] },
+          { calculate: `datum.cumulative - datum.${y.field}`, as: "start" },
+        ]
+      : undefined;
+  if (waterfallTransform && y) {
+    encoding.y = { field: "start", type: "quantitative", title: y.title ?? y.field };
+    encoding.y2 = { field: "cumulative" };
+  }
 
   const baseLayer = {
     data: { values: rows },
+    ...(waterfallTransform ? { transform: waterfallTransform } : {}),
     mark: markColor && !color ? { ...markConfig, color: markColor } : markConfig,
     encoding,
   };
   const referenceLineLayers = buildReferenceLineLayers(spec, theme?.negative_color);
 
+  // Vega's runtime merges this config with its own built-in defaults (including the named
+  // color-scheme table for "category"/"heatmap"/"diverging" etc). Setting a key to an explicit
+  // `undefined` -- rather than omitting it -- overwrites/wipes that default during the merge
+  // (unlike a plain absent key), which broke every chart with a nominal or quantitative color
+  // encoding when no theme was supplied ("Unrecognized scale range value: 'category'"/'heatmap'"
+  // at render time). `range` is the only key this ever affected in practice, so it's spread in
+  // conditionally instead of always being present with a possibly-undefined value.
   const sharedTopLevel = {
     $schema: "https://vega.github.io/schema/vega-lite/v6.json",
     width: spec.layout.width ?? "container",
@@ -162,7 +223,7 @@ export function compileToVegaLite(
         fontSize: 16,
         anchor: "start" as const,
       },
-      range: theme ? { category: rangeForPaletteType(theme) } : undefined,
+      ...(theme ? { range: { category: rangeForPaletteType(theme) } } : {}),
     },
   };
 

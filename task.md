@@ -1112,6 +1112,141 @@ starts the moment upload finishes. Full detail in `backend-ai-pipeline-audit.md`
 
 ---
 
+## Phase 35 — Full Implementation Verification & Production-Readiness Audit
+
+Full audit of Phase 34's automatic pipeline against the original spec, per
+`aivis-verification-report.md`. Live E2E-tested (upload → automatic queue → worker processes →
+recommendations → data quality), not just code-inspected.
+
+### P35-001 — Backend chart-type registry + validation gap (found and fixed)
+
+- [x] `validate_spec()` checked field/encoding compatibility but never checked whether
+  `chart_type` was a real, implemented chart at all — a bogus or hallucinated chart_type could
+  pass backend validation entirely. New `app/visualization/registry.py`
+  (`IMPLEMENTED_CHART_TYPES`/`PLANNED_CHART_TYPES`, mirrors the frontend registry's ids) wired
+  into `validate_spec()`. This also protects the studio's manual chart-type switch for free,
+  since `apply_command_to_visualization` already re-validates every command.
+- Acceptance: `tests/unit/test_visualization_spec.py` (2 new), `tests/unit/test_recommendation_ai_findings.py`
+  (1 new) — unknown/unimplemented chart types now rejected, verified both at the validator level
+  and through the AI-findings recommendation path.
+
+### P35-002 — Data quality: inconsistent-category check missed geographic fields (found live, fixed)
+
+- [x] Found via live E2E testing (not code review): a `state` column classifies as
+  `semantic_type="geographic"` (name-hint based, `app/insights/profiler.py`), not
+  `"categorical"` — the inconsistent-casing check was gated to `categorical` only, so
+  `"NY"`/`"ny"` duplicates on any geographic dimension produced zero findings. Fixed by
+  extending the gate to `("categorical", "geographic")`.
+- Acceptance: regression unit test + live re-verification (uploaded the same fixture twice,
+  confirmed 100/100→92/100 with the issue now correctly surfaced).
+
+### P35-003 — Data quality issues gained an actionable `recommendation` field
+
+- [x] Matches the spec's worked example (finding + concrete next step, not just an
+  observation) — `DataQualityIssue.recommendation`, one per issue type, surfaced through
+  `Analysis.data_quality` and rendered on the dataset page. Verified live.
+
+### P35-004 — GeminiProvider itself had zero direct test coverage
+
+- [x] Only the `AIProvider` interface was tested (via `FakeProvider` doubles), bypassing
+  `GeminiProvider.generate_structured()`'s own retry/validation logic entirely. New
+  `tests/unit/test_gemini_provider.py` (6 tests) mocks the SDK boundary (`genai.Client`) to
+  exercise real retry-on-malformed-JSON, retry-on-empty-response (same shape as a safety
+  refusal), SDK-exception handling, and recovery-on-second-attempt.
+
+### P35-005 — Prompt-injection resistance, structurally verified (not just asserted)
+
+- [x] `tests/unit/test_ai_findings.py::test_dataset_content_cannot_alter_the_system_instruction`
+  — a malicious category value (`"IGNORE ALL PREVIOUS INSTRUCTIONS AND..."`) embedded in
+  profiled column data reaches Gemini only as an escaped JSON string inside `prompt`; asserts
+  `system_instruction` is always the fixed constant regardless of dataset content.
+
+### P35-006 — Refresh/reconnect verified live (not assumed from architecture)
+
+- [x] Stopped the worker, uploaded a dataset (genuinely stuck in `queued`), reloaded the
+  browser — confirmed the frontend re-fetched the same `Analysis` row from the backend with no
+  restart/loss/duplication. Restarted the worker, confirmed it picked up the still-queued row
+  and completed normally. New integration test
+  (`test_failed_ingestion_never_creates_a_phantom_analysis`) covers the adjacent case: a failed
+  ingestion must not leave an orphaned `Analysis` that can never process.
+
+### P35-007 — Confirmed gaps (pre-existing or already known, documented not silently hidden)
+
+- [!] No rate limiting anywhere in the API (pre-existing, tracked separately at P28-003).
+- [!] `VisualizationSpec.transformations: list[str]` field exists but is never read or written
+  anywhere — dead field, placeholder for derived-metric transformations (percent_change,
+  rolling_average, z_score, percentage_of_total) that were never implemented. "Derived
+  visualizations" today means "additional chart candidates from the redundancy-filtered pool,"
+  not computed derived metrics — confirmed via `grep`, not assumed.
+- [!] No token-usage tracking on Gemini calls (was already flagged in the Phase 34 audit doc).
+- [!] No dataset-hash-keyed Gemini response cache (pipeline_version/prompt_version recorded but
+  not used to skip a re-run — retries re-call Gemini every time).
+- Full detail, scoring, and requirement-by-requirement evidence: `aivis-verification-report.md`.
+
+---
+
+## Phase 36 — 41-Type Visualization Library
+
+Full audit + partial implementation against the 41-chart-type requirement. Scope decision stated
+upfront and in `aivis-visualization-library-verification.md`: full correct implementations of
+every type need dependencies (`d3-force`, `d3-sankey`, `d3-hierarchy`, `topojson`, a KDE library)
+not currently installed, and per the requirement's own "mathematically/visually incorrect = not
+implemented" rule, nothing was faked to inflate the count.
+
+### P36-001 — Full 41-type registry (backend + frontend)
+
+- [x] `app/visualization/registry.py` + `frontend/src/lib/visualization/registry.ts` — 42 entries
+  (the 41 required + pre-existing `grouped_bar`), each with id/category/subcategory/description/
+  required+optional encodings/supported field types/min data points/max cardinality/supported
+  aggregations/temporal-geographic-hierarchical-relational-OHLC flags/renderer/`implemented`/
+  `blockedReason`. `bar`="Column Chart"(#1), `stacked_bar`="Stacked Column"(#2),
+  `horizontal_bar`="Bar Chart"(#3, new), `stacked_bar_horizontal`="Stacked Bar"(#18, new).
+- Acceptance: `IMPLEMENTED_CHART_TYPES`/`ALL_KNOWN_CHART_TYPES` importable, counts verified
+  (42 total, 18 of the required 41 implemented).
+
+### P36-002 — 8 new genuinely-correct chart renderers
+
+- [x] `to-vega-lite.ts`: `horizontal_bar`/`stacked_bar_horizontal` (real x/y channel swap),
+  `sorted_bar` (explicit sort direction), `waterfall` (real Vega-Lite window-transform running
+  cumulative total, not a client-side approximation), `pie` (arc, innerRadius 0 vs donut's 60),
+  `heatmap` (rect + quantitative color), `bubble` (point + size, already area-proportional by
+  Vega-Lite default), `sparkline` (line, axes hidden). New components: `KPICard` (real
+  sum/mean/median/count/min/max aggregation + real period-over-period comparison from actual row
+  data, never fabricated), `DataTable` (real client-side sort/pagination over real rows).
+- **Bug found and fixed via live testing**: `config.range: undefined` (an explicit key, not an
+  omitted one) wiped Vega's built-in named color-scheme table (`category`/`heatmap`/`diverging`)
+  whenever no theme was supplied, breaking every chart with a color encoding. Affected 4 of the
+  12 new chart types on first live check (`/studio-preview`); fixed by conditionally spreading
+  the `range` key instead of always including it with a possibly-undefined value.
+- Acceptance: 9 new frontend unit tests (`to-vega-lite.test.ts`), 5 new KPICard tests — all
+  passing; live re-verification at `/studio-preview` after the fix — 12/12 chart specs render
+  with zero errors.
+
+### P36-003 — Compatibility engine + AI context wiring
+
+- [x] `app/visualization/validation.py::REQUIRED_ENCODINGS` — every implemented chart type's
+  required encoding channels checked before a spec is valid (heatmap without color, bubble
+  without size, KPI without a measure all rejected with a specific error). AI findings' chart-type
+  prompt list (`app/services/ai_findings.py::_SUPPORTED_CHART_TYPES`) now generated from
+  `IMPLEMENTED_CHART_TYPES` directly instead of a hand-maintained duplicate. Recommendation engine
+  extended to auto-generate `horizontal_bar`/`sorted_bar`/`waterfall`/`sparkline` candidates from
+  2-field Stories (3-encoding types like `stacked_bar`/`heatmap`/`bubble` remain manual-studio-only
+  since the deterministic Story pipeline only ever carries a field pair).
+- Acceptance: 7 new compatibility-engine unit tests, 4 new recommendation-generation unit tests,
+  full backend suite still green (125/125) after wiring.
+
+### P36-004 — Verification matrix + honest accounting
+
+- [x] `aivis-visualization-library-verification.md` — all 41 required rows, 18 PASS (verified via
+  unit test + live zero-error render), 23 BLOCKED with the specific missing dependency or schema
+  gap named per row (not a vague "not implemented"). No row claims PASS without both a passing
+  test and a live render check backing it.
+- Final count: **18/41 implemented and verified**, 0 failing, 23 blocked on real, named
+  dependency/schema gaps (D3 layout libraries, geo/topojson, OHLC/dual-measure/date-range schema
+  extensions, KDE) — not attempted with a fake/incorrect implementation to inflate the number.
+
+---
+
 ## Future Phase 2 — AI Visualization Copilot (PLANNING ONLY — DO NOT IMPLEMENT)
 
 ### F2-001 — Document chatbot architecture extension points (VisualizationCommand, Validator, AIProvider hook)

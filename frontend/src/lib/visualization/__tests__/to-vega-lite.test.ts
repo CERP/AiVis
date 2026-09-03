@@ -8,8 +8,12 @@ import type { VisualizationSpec } from "@/lib/visualization/spec";
  * (not the real TopLevelSpec union, which is awkward to narrow in tests) covering both the
  * single-layer and multi-layer (annotation) cases. */
 interface CompiledSpec {
-  mark: { type?: string; color?: string };
-  encoding: Record<string, { field?: string; type?: string; aggregate?: string } | undefined>;
+  mark: { type?: string; innerRadius?: number; color?: string };
+  encoding: Record<
+    string,
+    { field?: string; type?: string; aggregate?: string; sort?: string; axis?: unknown } | undefined
+  >;
+  transform?: Record<string, unknown>[];
   layer?: {
     mark: { type: string };
     encoding: Record<string, { field?: string; type?: string }>;
@@ -120,6 +124,116 @@ describe("compileToVegaLite", () => {
     const result = compileToVegaLite(baseSpec(), []) as unknown as CompiledSpec;
     expect(result.layer).toBeUndefined();
     expect(result.mark).toBeDefined();
+  });
+});
+
+describe("new chart type compilation", () => {
+  it("swaps x/y for horizontal_bar -- a genuine orientation transform, not an approximation", () => {
+    const spec = baseSpec({ chart_type: "horizontal_bar" });
+    const result = compileToVegaLite(spec, []) as unknown as CompiledSpec;
+    expect(result.encoding.x).toMatchObject({ field: "revenue" });
+    expect(result.encoding.y).toMatchObject({ field: "region" });
+  });
+
+  it("swaps x/y for stacked_bar_horizontal and keeps the color/stack encoding", () => {
+    const spec = baseSpec({
+      chart_type: "stacked_bar_horizontal",
+      encoding: {
+        x: { field: "region", type: "nominal" },
+        y: { field: "revenue", type: "quantitative", aggregation: "sum" },
+        color: { field: "product", type: "nominal" },
+      },
+    });
+    const result = compileToVegaLite(spec, []) as unknown as CompiledSpec;
+    expect(result.encoding.x).toMatchObject({ field: "revenue" });
+    expect(result.encoding.y).toMatchObject({ field: "region" });
+    expect(result.encoding.color).toMatchObject({ field: "product" });
+  });
+
+  it("applies descending sort on the categorical axis for sorted_bar by default", () => {
+    const spec = baseSpec({ chart_type: "sorted_bar" });
+    const result = compileToVegaLite(spec, []) as unknown as CompiledSpec;
+    expect(result.encoding.x?.sort).toBe("-y");
+  });
+
+  it("applies ascending sort for sorted_bar when spec.sort.descending is false", () => {
+    const spec = baseSpec({ chart_type: "sorted_bar", sort: { field: "revenue", descending: false } });
+    const result = compileToVegaLite(spec, []) as unknown as CompiledSpec;
+    expect(result.encoding.x?.sort).toBe("y");
+  });
+
+  it("computes a mathematically correct running-cumulative-total transform for waterfall", () => {
+    const spec = baseSpec({ chart_type: "waterfall" });
+    const result = compileToVegaLite(spec, [
+      { region: "Start", revenue: 100 },
+      { region: "Q1", revenue: 50 },
+      { region: "Q2", revenue: -20 },
+    ]) as unknown as CompiledSpec;
+    // y = cumulative total *before* this row, y2 = cumulative total *after* -- so each bar
+    // spans exactly the right range regardless of row order, computed by Vega-Lite's own
+    // window transform (not a client-side precomputed approximation).
+    expect(result.transform).toBeDefined();
+    expect(result.transform?.[0]).toMatchObject({
+      window: [{ op: "sum", field: "revenue", as: "cumulative" }],
+    });
+    expect(result.encoding.y).toMatchObject({ field: "start", type: "quantitative" });
+    expect(result.encoding.y2).toMatchObject({ field: "cumulative" });
+  });
+
+  it("uses innerRadius 0 for pie and 60 for donut -- same arc mark, different geometry", () => {
+    const pieSpec = baseSpec({
+      chart_type: "pie",
+      encoding: {
+        size: { field: "revenue", type: "quantitative" },
+        color: { field: "region", type: "nominal" },
+      },
+    });
+    const donutSpec = { ...pieSpec, chart_type: "donut" };
+    const pieResult = compileToVegaLite(pieSpec, []) as unknown as CompiledSpec;
+    const donutResult = compileToVegaLite(donutSpec, []) as unknown as CompiledSpec;
+    expect(pieResult.mark.innerRadius).toBe(0);
+    expect(donutResult.mark.innerRadius).toBe(60);
+  });
+
+  it("compiles heatmap with x/y/color as rect mark, color forced quantitative", () => {
+    const spec = baseSpec({
+      chart_type: "heatmap",
+      encoding: {
+        x: { field: "region", type: "nominal" },
+        y: { field: "product", type: "nominal" },
+        color: { field: "revenue", type: "quantitative" },
+      },
+    });
+    const result = compileToVegaLite(spec, []) as unknown as CompiledSpec;
+    expect(result.mark.type).toBe("rect");
+    expect(result.encoding.color).toMatchObject({ field: "revenue", type: "quantitative" });
+  });
+
+  it("compiles bubble with size encoding present (area-proportional by Vega-Lite default)", () => {
+    const spec = baseSpec({
+      chart_type: "bubble",
+      encoding: {
+        x: { field: "revenue", type: "quantitative" },
+        y: { field: "units", type: "quantitative" },
+        size: { field: "profit", type: "quantitative" },
+      },
+    });
+    const result = compileToVegaLite(spec, []) as unknown as CompiledSpec;
+    expect(result.mark.type).toBe("point");
+    expect(result.encoding.size).toMatchObject({ field: "profit" });
+  });
+
+  it("hides axes for sparkline (compact inline trend, no chrome)", () => {
+    const spec = baseSpec({
+      chart_type: "sparkline",
+      encoding: {
+        x: { field: "region", type: "temporal" },
+        y: { field: "revenue", type: "quantitative" },
+      },
+    });
+    const result = compileToVegaLite(spec, []) as unknown as CompiledSpec;
+    expect(result.encoding.x?.axis).toBeNull();
+    expect(result.encoding.y?.axis).toBeNull();
   });
 });
 

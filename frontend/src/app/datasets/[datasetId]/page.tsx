@@ -171,7 +171,10 @@ export default function DatasetDetailPage() {
                     issue.severity === "high" && "border-negative/30 text-negative"
                   )}
                 >
-                  {issue.description}
+                  <p>{issue.description}</p>
+                  {issue.recommendation && (
+                    <p className="mt-1 text-xs text-muted-foreground">{issue.recommendation}</p>
+                  )}
                 </li>
               ))}
             </ul>

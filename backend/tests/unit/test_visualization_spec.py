@@ -52,6 +52,31 @@ def test_validation_rejects_incompatible_encoding_type() -> None:
     assert any("not compatible" in e for e in result.errors)
 
 
+def test_validation_rejects_unknown_chart_type() -> None:
+    """No backend chart-type registry existed before this audit -- validate_spec() checked
+    field/encoding compatibility but never checked whether chart_type was a real chart at all.
+    A bogus or AI-hallucinated chart_type could previously pass validation entirely."""
+    spec = VisualizationSpec(
+        chart_type="made_up_chart_type",
+        encoding=Encodings(x=Encoding(field="region", type=EncodingType.NOMINAL)),
+        metadata=VisualizationMetadata(dataset_id="d1", dataset_version_id="v1"),
+    )
+    result = validate_spec(spec, {"region": "categorical"})
+    assert not result.is_valid
+    assert any("Unknown chart type" in e for e in result.errors)
+
+
+def test_validation_rejects_planned_but_unimplemented_chart_type() -> None:
+    spec = VisualizationSpec(
+        chart_type="treemap",  # a real, planned chart type -- just not renderable yet
+        encoding=Encodings(x=Encoding(field="region", type=EncodingType.NOMINAL)),
+        metadata=VisualizationMetadata(dataset_id="d1", dataset_version_id="v1"),
+    )
+    result = validate_spec(spec, {"region": "categorical"})
+    assert not result.is_valid
+    assert any("not implemented yet" in e for e in result.errors)
+
+
 def test_apply_command_change_chart_type_does_not_mutate_original() -> None:
     spec = _spec()
     command = VisualizationCommand(

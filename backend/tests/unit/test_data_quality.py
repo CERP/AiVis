@@ -34,6 +34,19 @@ def test_missing_values_flagged_with_percentage() -> None:
     assert report.score < 100
 
 
+def test_every_issue_carries_an_actionable_recommendation_not_just_a_description() -> None:
+    """Matches the pipeline spec's worked example: a finding plus a concrete next step, not
+    just a bare observation."""
+    df = pl.DataFrame({"state": ["NY", "ny", "CA", "ca", "TX"]})
+    columns = [
+        ColumnQualityInput(name="state", semantic_type="categorical", raw_type="Utf8", null_count=0, unique_count=5, stats={})
+    ]
+    report = analyze_data_quality(df, columns)
+    issue = next(i for i in report.issues if i.type == "inconsistent_categories")
+    assert issue.recommendation
+    assert "normaliz" in issue.recommendation.lower()
+
+
 def test_duplicate_rows_detected() -> None:
     df = pl.DataFrame({"a": [1, 1, 2, 3], "b": ["x", "x", "y", "z"]})
     columns = [
@@ -75,6 +88,18 @@ def test_inconsistent_categories_detected_via_case_normalization() -> None:
     report = analyze_data_quality(df, columns)
     issue = next(i for i in report.issues if i.type == "inconsistent_categories")
     assert "state" in issue.description
+
+
+def test_inconsistent_categories_detected_on_geographic_field() -> None:
+    """Regression test: a 'state' column classifies as semantic_type='geographic' (name-hint
+    based), not 'categorical' -- found live during this audit that the inconsistency check was
+    gated to 'categorical' only, silently missing "NY" vs "ny" on every geographic dimension."""
+    df = pl.DataFrame({"state": ["NY", "ny", "CA", "ca", "TX"]})
+    columns = [
+        ColumnQualityInput(name="state", semantic_type="geographic", raw_type="Utf8", null_count=0, unique_count=5, stats={})
+    ]
+    report = analyze_data_quality(df, columns)
+    assert any(i.type == "inconsistent_categories" for i in report.issues)
 
 
 def test_high_cardinality_categorical_flagged() -> None:

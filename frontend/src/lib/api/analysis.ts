@@ -22,6 +22,7 @@ export interface DataQualityIssue {
   column: string | null;
   description: string;
   severity: "low" | "medium" | "high";
+  recommendation: string;
 }
 
 export interface DataQuality {

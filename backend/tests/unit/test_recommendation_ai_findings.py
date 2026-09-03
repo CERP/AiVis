@@ -6,7 +6,11 @@ import uuid
 
 from app.ai.schemas import AnalyticalFinding, FindingType
 from app.models.insight import Story
-from app.visualization.recommendation import generate_recommendations
+from app.visualization.recommendation import (
+    generate_recommendations,
+    recommendation_shortfall_reason,
+    split_top_and_derived,
+)
 
 _SEMANTIC_TYPES = {"revenue": "currency", "units": "numeric", "region": "categorical"}
 
@@ -73,3 +77,48 @@ def test_ai_finding_with_unknown_suggested_chart_falls_back_to_bar() -> None:
     recs = generate_recommendations([], _SEMANTIC_TYPES, "v1", ai_findings=[finding])
     assert len(recs) == 1
     assert recs[0].spec.chart_type == "bar"
+
+
+def test_ai_finding_with_invalid_chart_type_string_is_discarded_not_rendered() -> None:
+    """Gemini is instructed to only pick from the supported chart set, but that's a prompt
+    guideline, not an enforcement boundary -- validate_spec()'s chart-registry check (added
+    during this audit) is what actually prevents an unrenderable chart type from reaching a
+    recommendation, regardless of whether Gemini or a bug produced it."""
+    finding = AnalyticalFinding(
+        type=FindingType.OTHER,
+        fields=["revenue", "units"],
+        description="something",
+        confidence=0.9,
+        suggested_chart_type="made_up_chart_type_xyz",
+    )
+    recs = generate_recommendations([], _SEMANTIC_TYPES, "v1", ai_findings=[finding])
+    assert recs == []
+
+
+def test_shortfall_reason_present_when_zero_recommendations() -> None:
+    reason = recommendation_shortfall_reason(0)
+    assert reason is not None
+    assert "any confident" in reason
+
+
+def test_shortfall_reason_absent_when_eight_or_more() -> None:
+    assert recommendation_shortfall_reason(8) is None
+    assert recommendation_shortfall_reason(12) is None
+
+
+def test_split_top_and_derived_never_returns_more_than_eight_in_top() -> None:
+    findings = [
+        AnalyticalFinding(
+            type=FindingType.OTHER,
+            fields=[f"field_{i}", "revenue"],
+            description=f"finding {i}",
+            confidence=0.5,
+            suggested_chart_type="bar",
+        )
+        for i in range(12)
+    ]
+    semantic_types = {**_SEMANTIC_TYPES, **{f"field_{i}": "categorical" for i in range(12)}}
+    recs = generate_recommendations([], semantic_types, "v1", ai_findings=findings)
+    top, derived = split_top_and_derived(recs)
+    assert len(top) <= 8
+    assert len(top) + len(derived) == len(recs)
