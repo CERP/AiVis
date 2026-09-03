@@ -4,14 +4,14 @@ import type { NextRequest } from "next/server";
 /**
  * Gates access based on presence of the aivis_auth_present cookie set by the Zustand auth
  * store (src/store/auth-store.ts) on login/signup. This only proves a token exists client-side
- * -- it does not validate the JWT (middleware runs on the edge without the backend's secret).
+ * -- it does not validate the JWT (proxy runs on the edge without the backend's secret).
  * Every protected API call is still authorized server-side regardless of this check; this is
  * a UX redirect, not the security boundary.
  */
 const PROTECTED_PREFIXES = ["/projects", "/datasets", "/studio"];
 const AUTH_COOKIE_NAME = "aivis_auth_present";
 
-export function middleware(request: NextRequest) {
+export function proxy(request: NextRequest) {
   const isProtected = PROTECTED_PREFIXES.some((prefix) =>
     request.nextUrl.pathname.startsWith(prefix)
   );

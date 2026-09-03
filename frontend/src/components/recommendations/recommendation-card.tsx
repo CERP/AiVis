@@ -40,9 +40,10 @@ export function RecommendationCard({
     <motion.div
       initial={{ opacity: 0, y: 16 }}
       animate={{ opacity: 1, y: 0 }}
+      whileHover={{ y: -2 }}
       transition={{ duration: 0.35, delay: index * 0.06, ease: "easeOut" }}
     >
-      <Card className="flex h-full flex-col overflow-hidden">
+      <Card className="flex h-full flex-col overflow-hidden transition-shadow hover:shadow-md">
         <div
           aria-hidden
           className="flex h-28 items-center justify-center bg-surface-muted font-mono text-3xl tracking-widest text-muted-foreground"

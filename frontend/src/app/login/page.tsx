@@ -2,7 +2,7 @@
 
 import { useMutation } from "@tanstack/react-query";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useState } from "react";
+import { Suspense, useState } from "react";
 
 import { AppShell } from "@/components/layout/app-shell";
 import { Button } from "@/components/ui/button";
@@ -13,7 +13,7 @@ import { ApiError } from "@/lib/api/client";
 import { login } from "@/lib/api/auth";
 import { useAuthStore } from "@/store/auth-store";
 
-export default function LoginPage() {
+function LoginForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const setToken = useAuthStore((s) => s.setToken);
@@ -29,48 +29,54 @@ export default function LoginPage() {
   });
 
   return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Log in</CardTitle>
+        <Subtitle className="text-sm">Continue to your projects.</Subtitle>
+      </CardHeader>
+      <CardContent>
+        <form
+          className="flex flex-col gap-4"
+          onSubmit={(e) => {
+            e.preventDefault();
+            mutation.mutate({ email, password });
+          }}
+        >
+          <Input
+            type="email"
+            placeholder="Email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            required
+          />
+          <Input
+            type="password"
+            placeholder="Password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            required
+          />
+          {mutation.isError && (
+            <p role="alert" className="text-sm text-negative">
+              {mutation.error instanceof ApiError ? mutation.error.detail : "Something went wrong."}
+            </p>
+          )}
+          <Button type="submit" variant="accent" disabled={mutation.isPending}>
+            {mutation.isPending ? "Logging in…" : "Log in"}
+          </Button>
+        </form>
+      </CardContent>
+    </Card>
+  );
+}
+
+export default function LoginPage() {
+  return (
     <AppShell>
       <section className="mx-auto flex max-w-sm flex-col gap-6 px-6 py-24">
-        <Card>
-          <CardHeader>
-            <CardTitle>Log in</CardTitle>
-            <Subtitle className="text-sm">Continue to your projects.</Subtitle>
-          </CardHeader>
-          <CardContent>
-            <form
-              className="flex flex-col gap-4"
-              onSubmit={(e) => {
-                e.preventDefault();
-                mutation.mutate({ email, password });
-              }}
-            >
-              <Input
-                type="email"
-                placeholder="Email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                required
-              />
-              <Input
-                type="password"
-                placeholder="Password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                required
-              />
-              {mutation.isError && (
-                <p role="alert" className="text-sm text-negative">
-                  {mutation.error instanceof ApiError
-                    ? mutation.error.detail
-                    : "Something went wrong."}
-                </p>
-              )}
-              <Button type="submit" variant="accent" disabled={mutation.isPending}>
-                {mutation.isPending ? "Logging in…" : "Log in"}
-              </Button>
-            </form>
-          </CardContent>
-        </Card>
+        <Suspense fallback={null}>
+          <LoginForm />
+        </Suspense>
       </section>
     </AppShell>
   );

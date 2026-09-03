@@ -1,5 +1,6 @@
 import { Slot } from "@radix-ui/react-slot";
 import { cva, type VariantProps } from "class-variance-authority";
+import { motion, type HTMLMotionProps } from "framer-motion";
 import type { ButtonHTMLAttributes } from "react";
 
 import { cn } from "@/lib/utils";
@@ -36,6 +37,19 @@ export interface ButtonProps
 }
 
 export function Button({ className, variant, size, asChild = false, ...props }: ButtonProps) {
-  const Comp = asChild ? Slot : "button";
-  return <Comp className={cn(buttonVariants({ variant, size, className }))} {...props} />;
+  if (asChild) {
+    return <Slot className={cn(buttonVariants({ variant, size, className }))} {...props} />;
+  }
+  // whileHover/whileTap give clickable elements immediate press feedback -- one of the
+  // baseline motion gaps found in the frontend audit (Framer Motion was installed but used
+  // in exactly one component before this).
+  return (
+    <motion.button
+      whileHover={{ scale: 1.02 }}
+      whileTap={{ scale: 0.97 }}
+      transition={{ duration: 0.12, ease: "easeOut" }}
+      className={cn(buttonVariants({ variant, size, className }))}
+      {...(props as HTMLMotionProps<"button">)}
+    />
+  );
 }

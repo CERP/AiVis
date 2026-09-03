@@ -2,11 +2,12 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useParams, useRouter } from "next/navigation";
+import { useState } from "react";
 
 import { AppShell } from "@/components/layout/app-shell";
 import { Button } from "@/components/ui/button";
 import { RecommendationCard } from "@/components/recommendations/recommendation-card";
-import { EmptyState, ErrorState, ProcessingState } from "@/components/ui/states";
+import { EmptyState, ErrorState, ProcessingState, StagedProcessing } from "@/components/ui/states";
 import { Headline, SectionHeading, Subtitle } from "@/components/ui/typography";
 import { ApiError } from "@/lib/api/client";
 import { getDataset } from "@/lib/api/datasets";
@@ -51,10 +52,16 @@ export default function DatasetDetailPage() {
     enabled: hasBeenAnalyzed,
   });
 
+  const ANALYSIS_STAGES = ["Analyzing statistics", "Detecting patterns", "Ranking visualizations"];
+  const [analysisStage, setAnalysisStage] = useState(0);
+
   const runAnalysis = useMutation({
     mutationFn: async () => {
+      setAnalysisStage(0);
       await analyzeInsights(datasetId);
+      setAnalysisStage(1);
       await analyzeStories(datasetId);
+      setAnalysisStage(2);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["insights", datasetId] });
@@ -177,16 +184,20 @@ export default function DatasetDetailPage() {
         )}
 
         {!hasBeenAnalyzed && (
-          <div>
-            <Button
-              variant="accent"
-              onClick={() => runAnalysis.mutate()}
-              disabled={runAnalysis.isPending || !profileQuery.data}
-            >
-              {runAnalysis.isPending ? "Analyzing…" : "Discover insights"}
-            </Button>
+          <div className="flex flex-col gap-4">
+            {runAnalysis.isPending ? (
+              <StagedProcessing stages={ANALYSIS_STAGES} activeIndex={analysisStage} />
+            ) : (
+              <Button
+                variant="accent"
+                onClick={() => runAnalysis.mutate()}
+                disabled={!profileQuery.data}
+              >
+                Discover insights
+              </Button>
+            )}
             {runAnalysis.isError && (
-              <p role="alert" className="mt-2 text-sm text-negative">
+              <p role="alert" className="text-sm text-negative">
                 {runAnalysis.error instanceof ApiError
                   ? runAnalysis.error.detail
                   : "Analysis failed."}

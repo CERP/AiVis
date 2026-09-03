@@ -12,7 +12,7 @@ export function Headline({ children, className, as: Comp = "h1" }: TypographyPro
   return (
     <Comp
       className={cn(
-        "font-headline text-[clamp(2rem,4vw,3.5rem)] leading-[1.05] tracking-tight text-foreground",
+        "font-headline text-[clamp(2rem,4vw,3.5rem)] font-bold leading-[1.05] tracking-tight text-foreground",
         className
       )}
     >
@@ -38,7 +38,7 @@ export function SectionHeading({ children, className, as: Comp = "h2" }: Typogra
   return (
     <Comp
       className={cn(
-        "font-headline text-2xl md:text-3xl leading-tight tracking-tight text-foreground",
+        "font-headline text-2xl md:text-3xl font-semibold leading-tight tracking-tight text-foreground",
         className
       )}
     >
