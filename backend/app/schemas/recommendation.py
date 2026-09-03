@@ -6,9 +6,7 @@ from app.visualization.spec import VisualizationSpec
 class VisualizationRecommendationResponse(BaseModel):
     story_id: str
     title: str
-    analytical_question: str
-    explanation: str
-    why_recommended: str
+    description: str
     spec: VisualizationSpec
     confidence: float
 

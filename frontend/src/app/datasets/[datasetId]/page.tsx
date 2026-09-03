@@ -197,7 +197,7 @@ export default function DatasetDetailPage() {
 
         {hasBeenAnalyzed && (
           <div className="flex flex-col gap-6">
-            <SectionHeading as="h2">8 ways to see your data</SectionHeading>
+            <SectionHeading as="h2">Suggested visualizations</SectionHeading>
 
             {recommendationsQuery.isLoading && <ProcessingState label="Ranking visualizations…" />}
             {recommendationsQuery.data && recommendationsQuery.data.top.length === 0 && (

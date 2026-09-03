@@ -2,7 +2,7 @@ import type { TopLevelSpec } from "vega-lite";
 
 import type { ThemeTokens } from "@/lib/api/theme";
 
-import type { Encoding, VisualizationSpec } from "./spec";
+import type { Annotation, Encoding, VisualizationSpec } from "./spec";
 
 /**
  * Compiles our VisualizationSpec into a Vega-Lite spec, given inline row data. The renderer
@@ -49,6 +49,44 @@ function rangeForPaletteType(theme: ThemeTokens): string[] {
   return theme.categorical_colors;
 }
 
+/** Reference-line annotations render as an actual chart overlay (a Vega-Lite layer) since
+ * that only needs one fixed axis value, no scale-domain guesswork. Text-based annotation
+ * types (callout/label/highlighted_region/source_note) render as accessible HTML alongside
+ * the chart instead of SVG text -- more robust to position and better for screen readers than
+ * fighting Vega-Lite's layout engine for pixel-perfect text placement. */
+function buildReferenceLineLayers(
+  spec: VisualizationSpec,
+  color: string | undefined
+): Record<string, unknown>[] {
+  const layers: Record<string, unknown>[] = [];
+  for (const annotation of spec.annotations) {
+    if (annotation.type !== "reference_line") continue;
+    if (annotation.target_field == null || annotation.target_value == null) continue;
+
+    const axis: "x" | "y" | null =
+      spec.encoding.x?.field === annotation.target_field
+        ? "x"
+        : spec.encoding.y?.field === annotation.target_field
+          ? "y"
+          : null;
+    if (!axis) continue;
+
+    const encodingType = spec.encoding[axis]?.type ?? "quantitative";
+    layers.push({
+      data: { values: [{ value: annotation.target_value }] },
+      mark: { type: "rule", strokeDash: [4, 4], color: color ?? "#b5432a" },
+      encoding: {
+        [axis]: { field: "value", type: encodingType },
+      },
+    });
+  }
+  return layers;
+}
+
+export function textAnnotations(spec: VisualizationSpec): Annotation[] {
+  return spec.annotations.filter((a) => a.type !== "reference_line");
+}
+
 export function compileToVegaLite(
   spec: VisualizationSpec,
   rows: Record<string, unknown>[],
@@ -76,11 +114,15 @@ export function compileToVegaLite(
   const markConfig =
     spec.chart_type === "donut" ? { type: mark, innerRadius: 60 } : { type: mark };
 
-  return {
-    $schema: "https://vega.github.io/schema/vega-lite/v6.json",
+  const baseLayer = {
     data: { values: rows },
     mark: markColor && !color ? { ...markConfig, color: markColor } : markConfig,
     encoding,
+  };
+  const referenceLineLayers = buildReferenceLineLayers(spec, theme?.negative_color);
+
+  const sharedTopLevel = {
+    $schema: "https://vega.github.io/schema/vega-lite/v6.json",
     width: spec.layout.width ?? "container",
     height: spec.layout.height ?? 320,
     title: spec.typography.title ?? undefined,
@@ -97,5 +139,14 @@ export function compileToVegaLite(
       title: { color: theme?.foreground, font: theme?.headline_font },
       range: theme ? { category: rangeForPaletteType(theme) } : undefined,
     },
+  };
+
+  if (referenceLineLayers.length === 0) {
+    return { ...sharedTopLevel, ...baseLayer } as TopLevelSpec;
+  }
+
+  return {
+    ...sharedTopLevel,
+    layer: [baseLayer, ...referenceLineLayers],
   } as TopLevelSpec;
 }

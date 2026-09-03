@@ -4,7 +4,7 @@ import { motion } from "framer-motion";
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
-import { Annotation, ChartLabel, SectionHeading } from "@/components/ui/typography";
+import { ChartLabel, SectionHeading } from "@/components/ui/typography";
 import { getChartDefinition } from "@/lib/visualization/registry";
 import type { VisualizationRecommendation } from "@/lib/api/types";
 import { cn } from "@/lib/utils";
@@ -61,11 +61,7 @@ export function RecommendationCard({
           </ChartLabel>
         </CardHeader>
         <CardContent className="flex flex-1 flex-col gap-3">
-          <p className="text-sm text-foreground">{recommendation.analytical_question}</p>
-          <p className="text-sm text-muted-foreground">{recommendation.explanation}</p>
-          <Annotation className="text-xs font-normal text-muted-foreground">
-            {recommendation.why_recommended}
-          </Annotation>
+          <p className="text-sm text-muted-foreground">{recommendation.description}</p>
           {onOpenStudio && (
             <Button
               size="sm"

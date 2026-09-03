@@ -1,9 +1,10 @@
-# Aivis — AI-Native Editorial Data Visualization Studio
+# Aivis — AI-Assisted Data Visualization Studio
 
-An editorial-quality data visualization studio: upload a dataset, get it profiled and cleaned,
-discover insights and stories, receive ranked visualization + theme recommendations, then refine
-in a manual studio and export. Inspired by the storytelling/typography/clarity of data journalism
-at outlets like the NYT and WaPo — no proprietary assets or branding used.
+An analytics tool for CERP: upload a dataset, get it profiled and cleaned, discover statistical
+insights, receive ranked chart recommendations grounded in those insights, then refine in a
+manual studio and export. Visual quality bar (typography, whitespace, restraint) is inspired by
+the graphic design of outlets like the NYT and WaPo — no narrative/storytelling framing, no
+proprietary assets or branding used. This is a data analysis tool, not a data-journalism product.
 
 **Scope note:** the AI Visualization Copilot (chatbot) is a planned Phase 2 feature and is
 intentionally **not implemented**. The architecture (`VisualizationSpec`, `VisualizationCommand`,

@@ -16,6 +16,20 @@ Priority:
 
 Scope reminder: Chatbot / AI Visualization Copilot is FUTURE PHASE 2. Do not implement now — only design extension points for it.
 
+**Product framing correction (this session, after most phases below were built):** this is an
+internal analytics tool for CERP's Analytics department, not a data-journalism/storytelling
+product. The NYT/WaPo references throughout this file (and the original spec) are about visual
+polish only (typography, whitespace, restraint) — not narrative framing. Phases 12/13 (Insight
+Engine, Story Engine) are kept as internal plumbing (they ground recommendations in real
+statistics), but their output is never shown to the user as a "question" or a narrative pitch.
+Concretely: `VisualizationRecommendationResponse` dropped `analytical_question`/`why_recommended`
+in favor of a single plain `description` (the underlying insight's stat, e.g. "Revenue and units
+show a strong positive relationship (r=1.00)."); the "8 ways to see your data" heading became
+"Suggested visualizations"; landing-page copy dropped "editorial story" language. Phase 12/13
+task entries below still describe the original story-engine acceptance criteria as *built* (that
+part didn't change) — only the reader should mentally substitute "insight" for "story" wherever
+the phrasing sounds like journalism.
+
 ---
 
 ## Phase 0 — Project Discovery & Architecture
@@ -91,6 +105,7 @@ Scope reminder: Chatbot / AI Visualization Copilot is FUTURE PHASE 2. Do not imp
 - [x] `docker-compose.yml` at root with postgres, redis, minio, backend, worker services + healthchecks. Postgres host port moved to 55433 (5432 was already taken by another local container). Added `infra/postgres-init/001-create-test-db.sql` so a fresh container also provisions `aivis_test`, keeping integration-test `create_all`/`drop_all` cycles off the dev DB Alembic manages.
 - Deps: P1-006
 - Acceptance: `docker compose up -d postgres` verified repeatedly this session (migrations, repo tests, auth tests all ran against it); `redis`/`backend`/`worker` services defined but not yet started/tested
+- **Bug found and fixed:** `.claude/launch.json`'s backend config ran `uvicorn` without `--reload` — the dev server silently kept serving old code after edits, which meant several "verified live" checks earlier in this session were actually hitting stale responses (the recommendation-card copy pivot appeared not to have taken effect until this was caught and fixed). Added `--reload`.
 
 ### P1-011 — .gitignore (root)
 
@@ -588,17 +603,17 @@ Scope reminder: Chatbot / AI Visualization Copilot is FUTURE PHASE 2. Do not imp
 
 ## Phase 18 — Eight Visualization Recommendation UI
 
-### P18-001 — Recommendation card component (preview, name, question, explanation, why-recommended, confidence, related insight)
+### P18-001 — Recommendation card component (chart type, plain stat headline, confidence)
 
-- [x] `frontend/src/components/recommendations/recommendation-card.tsx` — chart-type glyph header, title, confidence badge, chart-type label, analytical question, explanation, why-recommended note. Still uses a static glyph, not a live mini-chart — `GET /api/datasets/:id/rows` (bounded sample, server-capped at 2000 rows) now exists to make that possible, verified live (correct values, correct capping), but wiring it into the card itself is a follow-up, not done this session.
+- [x] `frontend/src/components/recommendations/recommendation-card.tsx` — chart-type glyph header, title (a plain data-driven headline, e.g. "Strong positive relationship between revenue and units"), confidence badge, chart-type label, a single-line description (the underlying insight's stat, e.g. "Revenue and units show a strong positive relationship (r=1.00)."). **Revised this session:** originally had "analytical_question" and "why_recommended" narrative fields — removed after a product-framing correction (this is an internal analytics tool for CERP, not a data-journalism/storytelling product; see the note near the top of this file). Still uses a static chart-type glyph, not a live mini-chart — `GET /api/datasets/:id/rows` exists to make that possible, wiring it into the card is a follow-up.
 - Deps: P17-005, P16-*
-- Acceptance: renders 8 cards from API data — originally verified with mock-shaped data only (frontend auth didn't exist yet); __now superseded__: `frontend/src/app/datasets/[datasetId]/page.tsx` wires this card to the real live pipeline (see new note below), verified against a real uploaded dataset end-to-end.
+- Acceptance: renders cards from live API data — verified end-to-end against a real uploaded dataset; also caught and fixed a real bug via this verification (dev backend was running without `--reload`, serving stale field names until the launch config was fixed — see P1-010).
 
-### P18-002 — "8 ways to see your data" screen layout + Framer Motion entrance
+### P18-002 — Recommendation grid layout + Framer Motion entrance
 
-- [x] `frontend/src/app/recommendations-preview/page.tsx` — responsive grid (`grid-cols-1 sm:grid-cols-2 lg:grid-cols-3`), "Explore more" section for the derived pool, staggered Framer Motion entrance (`delay: index * 0.06`) on each card.
+- [x] `frontend/src/app/datasets/[datasetId]/page.tsx` "Suggested visualizations" section (renamed from "8 ways to see your data" — same framing correction as P18-001) — responsive grid (`grid-cols-1 sm:grid-cols-2 lg:grid-cols-3`), "Explore more" section for the derived pool, staggered Framer Motion entrance (`delay: index * 0.06`) on each card. The standalone mock-data preview page (`/recommendations-preview`) that originally exercised this layout has been deleted — superseded by the live page, and its hardcoded mock copy (analytical_question/why_recommended) would have been stale/wrong under the new framing anyway.
 - Deps: P18-001
-- Acceptance: manual browser test desktop+mobile — verified live at both 450px (single column, confirmed via screenshot) and 1280px (3-column grid, confirmed via screenshot + bounding-box math for centering). `prefers-reduced-motion` handled globally via the CSS rule in `globals.css` (Phase 2), not per-component — not re-verified against this specific animation this session.
+- Acceptance: manual browser test — verified live via screenshot against a real dataset's recommendations. `prefers-reduced-motion` handled globally via the CSS rule in `globals.css` (Phase 2), not per-component.
 
 ### Live-wired dataset detail page (closes the P18 mock-data gap)
 
@@ -678,15 +693,15 @@ Scope reminder: Chatbot / AI Visualization Copilot is FUTURE PHASE 2. Do not imp
 
 ### P22-003 — Data mapping controls (encodings, aggregation)
 
-- [ ] Not started — the backend `change_field`/`change_aggregation` commands exist (Phase 14) and are exercised by backend tests, but no UI control calls them yet. Flagged as the most valuable next studio addition.
+- [x] "Data mapping" panel: a `<select>` per channel (x/y/color) populated from the dataset's real profiled columns, plus an aggregation `<select>` (none/sum/mean/median/count/min/max) once a field is set. `lib/visualization/encoding-helpers.ts::encodingTypeForColumn` maps the profiler's semantic_type to the Vega-Lite-ish encoding type the `change_field` command needs.
 - Deps: P22-001
-- Acceptance: manual test
+- Acceptance: manual test — verified live: changed x from `units` to `revenue`, aggregation from none to sum, each producing a new version and re-rendering the chart correctly
 
 ### P22-004 — Style controls (colors, typography, spacing, legend, axes, labels, number formats, background, grid, dimensions)
 
-- [~] Theme selection (swatch grid, same component pattern as `/theme-preview`) is live and working — clicking a theme changes the rendered chart's colors immediately (client-side only via the `theme` prop, not persisted as a `change_theme` command yet, so it doesn't survive a reload or show up as a new version). Typography/spacing/legend/axis/label/number-format/background/grid controls not built.
+- [~] Theme selection now **persists** via `change_theme` (not just client-side preview) — confirmed the spec's `theme` field survives across page state via `GET /versions`. Typography/spacing/legend/axis/label/number-format/background/grid still have no dedicated controls (only whatever the active theme sets).
 - Deps: P22-001, P21-*
-- Acceptance: manual test — theme-swatch portion verified live (color change confirmed via SVG fill inspection, `#E69F00` → `#111111` for monochrome)
+- Acceptance: manual test — verified live: theme click fires `PATCH` with `change_theme`, new version's `spec.theme` reflects the selected theme name
 
 ### P22-005 — Studio state management (Zustand store bound to VisualizationSpec + version history)
 
@@ -696,7 +711,7 @@ Scope reminder: Chatbot / AI Visualization Copilot is FUTURE PHASE 2. Do not imp
 
 ### P22-006 — Save/persist studio changes (`PATCH /api/visualizations/:id`)
 
-- [x] Every studio interaction (chart type change) is already persisted immediately via `PATCH /api/visualizations/:id` — there's no separate "save" step because each change *is* a new committed version. Verified live (see P22-002).
+- [x] Every studio interaction (chart type, field/aggregation, theme, annotations) is already persisted immediately via `PATCH /api/visualizations/:id` — no separate "save" step, every change is a new committed version.
 - Deps: P14-003, P4-004
 - Acceptance: reload preserves state
 
@@ -706,18 +721,21 @@ Scope reminder: Chatbot / AI Visualization Copilot is FUTURE PHASE 2. Do not imp
 
 ### P23-001 — Annotation spec types (callout, reference line, highlighted region, label, trend note, source note)
 
-- [ ] Deps: P14-001
-- Acceptance: schema documented
+- [x] `Annotation` in `app/visualization/spec.py` (backend) mirrored as `Annotation`/`AnnotationType` in `frontend/src/lib/visualization/spec.ts`: `id`, `type` (callout/reference_line/highlighted_region/label/source_note), `text`, `target_field`, `target_value`. `add_annotation`/`remove_annotation` commands already existed in `app/visualization/commands.py` (Phase 14) — this session added the frontend UI and renderer to actually use them.
+- Deps: P14-001
+- Acceptance: schema documented — this section + inline docstrings
 
 ### P23-002 — Annotation renderer (D3 overlay layer)
 
-- [ ] Deps: P23-001, P15-002
-- Acceptance: renders on top of chart
+- [x] Not a D3 overlay — implemented as a Vega-Lite **layer** instead (`to-vega-lite.ts::buildReferenceLineLayers`): `reference_line` annotations become a real dashed-rule mark layered onto the chart at the target axis value. Text-based types (callout/label/highlighted_region/source_note) deliberately render as accessible HTML below the chart (`AnnotationList` component) rather than SVG text — more robust to position (no scale-domain math needed) and better for screen readers than fighting Vega-Lite layout for pixel-perfect text placement. Documented as a deliberate deviation from "D3 overlay," not an oversight.
+- Deps: P23-001, P15-002
+- Acceptance: renders on top of chart — **verified live**: added a reference_line annotation, confirmed via direct SVG inspection a real `<line stroke="#b5432a" stroke-dasharray="4,4">` rendered on the chart at the correct value; added a source_note, confirmed it rendered as accessible paragraph text below the chart
 
 ### P23-003 — Annotation editor UI (add/edit/remove in studio)
 
-- [ ] Deps: P22-001, P23-002
-- Acceptance: manual test
+- [x] "Annotations" panel in the studio: type/text/target-field/target-value inputs, "Add annotation" button, and a list of existing annotations each with a "Remove" button. No edit-in-place (remove + re-add is the only path) — acceptable given the low complexity of annotations so far.
+- Deps: P22-001, P23-002
+- Acceptance: manual test — verified live: added 2 annotations (1 reference_line, 1 source_note), removed 1, confirmed the correct one was removed (the dashed line stayed, the text annotation disappeared) and the sidebar list updated correctly. Zero console errors throughout.
 
 ---
 
@@ -779,9 +797,9 @@ Scope reminder: Chatbot / AI Visualization Copilot is FUTURE PHASE 2. Do not imp
 
 ### P26-004 — API: `POST /api/exports`, `GET /api/exports/:id`
 
-- [ ] Not started. The `Export` model/table exists (Phase 4) but nothing writes to it — SVG/PNG export is currently client-side-only with no persisted record, no object-storage copy, and no shareable link. Needed for "reopen a past export" or "share an export link," not needed for "download what I'm looking at right now" (which works).
+- [x] `app/api/v1/exports.py`: `POST /api/exports` accepts already-rendered bytes (multipart) from the client + `visualization_version_id` + `format`, uploads to the exports bucket, creates an `Export` row (status=ready immediately, no async processing needed since the browser already rendered it), returns a response with a presigned `download_url`. `GET /api/exports/:id` re-fetches with a fresh signed URL. PDF format explicitly rejected (422) since it's not implemented (P26-005). Studio's Export SVG/PNG buttons now call this in addition to triggering the local download.
 - Deps: P26-001..003, P4-004, P5-*
-- Acceptance: endpoint tests, files in object storage
+- Acceptance: endpoint tests, files in object storage — `tests/integration/test_export_api.py`, 5/5 passing (create+fetch SVG, create PNG, reject empty file, reject pdf format, reject unowned version → 404). Verified live: studio export produced a real `201 Created` with a working presigned URL — fetched the URL directly and confirmed it returns the actual Vega-rendered SVG bytes. 82/82 backend tests passing overall.
 
 ### P26-005 — PDF export
 

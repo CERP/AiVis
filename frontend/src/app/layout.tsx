@@ -3,8 +3,8 @@ import "./globals.css";
 import { Providers } from "./providers";
 
 export const metadata: Metadata = {
-  title: "Aivis — Editorial Data Visualization Studio",
-  description: "AI-native editorial data visualization studio.",
+  title: "Aivis — Data Visualization Studio",
+  description: "AI-assisted data visualization and analytics studio.",
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {

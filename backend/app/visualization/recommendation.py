@@ -30,11 +30,14 @@ _SINGLE_FIELD_CHART_TYPES = {"histogram", "box_plot"}
 
 @dataclass
 class VisualizationRecommendation:
+    """Plain analytics-card content -- title is a data-driven headline (e.g. "Strong positive
+    relationship between revenue and units"), description is its supporting stat. No narrative
+    "question" framing or "why recommended" copy: this is an analytics tool, not a storytelling
+    product. confidence is the underlying insight's confidence score, shown as a plain number."""
+
     story_id: str
     title: str
-    analytical_question: str
-    explanation: str
-    why_recommended: str
+    description: str
     spec: VisualizationSpec
     confidence: float
 
@@ -139,12 +142,7 @@ def generate_recommendations(
             VisualizationRecommendation(
                 story_id=str(story.id),
                 title=story.title,
-                analytical_question=story.analytical_question,
-                explanation=story.description,
-                why_recommended=(
-                    f"Derived from a {story.confidence:.0%}-confidence "
-                    f"insight involving {', '.join(story.relevant_fields)}."
-                ),
+                description=story.description,
                 spec=spec,
                 confidence=story.confidence,
             )
