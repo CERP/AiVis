@@ -9,8 +9,3 @@ export interface VisualizationRecommendation {
   spec: VisualizationSpec;
   confidence: number;
 }
-
-export interface RecommendationsResponse {
-  top: VisualizationRecommendation[];
-  derived: VisualizationRecommendation[];
-}

@@ -2,9 +2,8 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { motion } from "framer-motion";
-import { Sparkles } from "lucide-react";
+import { RefreshCw } from "lucide-react";
 import { useParams, useRouter } from "next/navigation";
-import { useState } from "react";
 
 import { AppShell } from "@/components/layout/app-shell";
 import { Button } from "@/components/ui/button";
@@ -17,19 +16,15 @@ import {
   StatTile,
 } from "@/components/ui/states";
 import { Headline, SectionHeading } from "@/components/ui/typography";
+import { ANALYSIS_STAGE_LABELS, getAnalysis, retryAnalysis } from "@/lib/api/analysis";
 import { ApiError } from "@/lib/api/client";
 import { getDataset, getDatasetRows } from "@/lib/api/datasets";
 import { applyCleaning } from "@/lib/api/cleaning";
-import {
-  analyzeInsights,
-  analyzeStories,
-  getProfile,
-  getRecommendations,
-  listInsights,
-} from "@/lib/api/insights";
+import { getProfile } from "@/lib/api/insights";
 import { createVisualization } from "@/lib/api/visualizations";
 import type { VisualizationRecommendation } from "@/lib/api/types";
 import { computeCleaningSuggestions } from "@/lib/cleaning-suggestions";
+import { cn } from "@/lib/utils";
 
 export default function DatasetDetailPage() {
   const params = useParams<{ datasetId: string }>();
@@ -47,40 +42,30 @@ export default function DatasetDetailPage() {
     queryFn: () => getProfile(datasetId),
   });
 
-  const insightsQuery = useQuery({
-    queryKey: ["insights", datasetId],
-    queryFn: () => listInsights(datasetId),
+  // Uploading a dataset alone starts the whole pipeline server-side (see
+  // POST /api/datasets and the AnalysisOrchestrator/worker it queues) -- there is no manual
+  // "Analyze" action; this just polls the real backend stage until it lands on ready/failed.
+  const analysisQuery = useQuery({
+    queryKey: ["analysis", datasetId],
+    queryFn: () => getAnalysis(datasetId),
+    refetchInterval: (query) =>
+      query.state.data && !["ready", "failed"].includes(query.state.data.status) ? 1500 : false,
   });
 
-  const hasBeenAnalyzed = (insightsQuery.data?.length ?? 0) > 0;
+  const analysis = analysisQuery.data;
+  const isReady = analysis?.status === "ready";
+  const isFailed = analysis?.status === "failed";
+  const isProcessing = !!analysis && !isReady && !isFailed;
 
-  const recommendationsQuery = useQuery({
-    queryKey: ["recommendations", datasetId],
-    queryFn: () => getRecommendations(datasetId),
-    enabled: hasBeenAnalyzed,
+  const retryMutation = useMutation({
+    mutationFn: () => retryAnalysis(datasetId),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["analysis", datasetId] }),
   });
 
   const rowsQuery = useQuery({
     queryKey: ["dataset-rows-preview", datasetId],
     queryFn: () => getDatasetRows(datasetId, 100),
-    enabled: hasBeenAnalyzed,
-  });
-
-  const ANALYSIS_STAGES = ["Analyzing statistics", "Detecting patterns", "Ranking visualizations"];
-  const [analysisStage, setAnalysisStage] = useState(0);
-
-  const runAnalysis = useMutation({
-    mutationFn: async () => {
-      setAnalysisStage(0);
-      await analyzeInsights(datasetId);
-      setAnalysisStage(1);
-      await analyzeStories(datasetId);
-      setAnalysisStage(2);
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["insights", datasetId] });
-      queryClient.invalidateQueries({ queryKey: ["recommendations", datasetId] });
-    },
+    enabled: isReady,
   });
 
   const openInStudio = useMutation({
@@ -109,6 +94,13 @@ export default function DatasetDetailPage() {
     ? computeCleaningSuggestions(profileQuery.data.columns)
     : [];
 
+  const stageEntries = Object.entries(analysis?.stages ?? {});
+  const activeStageIndex = stageEntries.findIndex(([, s]) => s === "processing");
+  const stageLabels = stageEntries.map(([key]) => ANALYSIS_STAGE_LABELS[key] ?? key);
+
+  const recommendationCount =
+    (analysis?.recommendations?.top.length ?? 0) + (analysis?.recommendations?.derived.length ?? 0);
+
   return (
     <AppShell>
       <section className="mx-auto flex max-w-6xl flex-col gap-8 px-6 py-16">
@@ -125,15 +117,11 @@ export default function DatasetDetailPage() {
             <StatTile label="Rows" value={profileQuery.data.row_count.toLocaleString()} index={0} />
             <StatTile label="Columns" value={profileQuery.data.column_count} index={1} />
             <StatTile
-              label="Insights"
-              value={insightsQuery.data?.length ?? 0}
+              label="Data quality"
+              value={analysis?.data_quality ? `${analysis.data_quality.score}/100` : "—"}
               index={2}
             />
-            <StatTile
-              label="Cleanup suggestions"
-              value={suggestions.length}
-              index={3}
-            />
+            <StatTile label="Recommendations" value={isReady ? recommendationCount : "—"} index={3} />
           </div>
         )}
         {profileQuery.isError && (
@@ -162,6 +150,31 @@ export default function DatasetDetailPage() {
                 </p>
               </motion.div>
             ))}
+          </div>
+        )}
+
+        {analysis?.data_quality && analysis.data_quality.issues.length > 0 && (
+          <div className="flex flex-col gap-3">
+            <SectionHeading as="h2" className="text-lg">
+              Data quality — {analysis.data_quality.score}/100
+            </SectionHeading>
+            <p className="text-sm text-muted-foreground">
+              {analysis.data_quality.issues.length} issue
+              {analysis.data_quality.issues.length !== 1 ? "s" : ""} found
+            </p>
+            <ul className="flex flex-col gap-1.5">
+              {analysis.data_quality.issues.map((issue, i) => (
+                <li
+                  key={`${issue.type}-${issue.column}-${i}`}
+                  className={cn(
+                    "rounded-[var(--radius-token)] border border-border bg-surface px-3 py-2 text-sm",
+                    issue.severity === "high" && "border-negative/30 text-negative"
+                  )}
+                >
+                  {issue.description}
+                </li>
+              ))}
+            </ul>
           </div>
         )}
 
@@ -214,44 +227,54 @@ export default function DatasetDetailPage() {
           </div>
         )}
 
-        {!hasBeenAnalyzed && (
+        {isProcessing && (
           <div className="flex flex-col gap-4">
-            {runAnalysis.isPending ? (
-              <StagedProcessing stages={ANALYSIS_STAGES} activeIndex={analysisStage} />
-            ) : (
-              <Button
-                variant="accent"
-                onClick={() => runAnalysis.mutate()}
-                disabled={!profileQuery.data}
-              >
-                <Sparkles aria-hidden className="mr-1.5 h-4 w-4" />
-                Discover insights
-              </Button>
-            )}
-            {runAnalysis.isError && (
-              <p role="alert" className="text-sm text-negative">
-                {runAnalysis.error instanceof ApiError
-                  ? runAnalysis.error.detail
-                  : "Analysis failed."}
-              </p>
-            )}
+            <SectionHeading as="h2">Analyzing dataset…</SectionHeading>
+            <StagedProcessing
+              stages={stageLabels}
+              activeIndex={activeStageIndex === -1 ? 0 : activeStageIndex}
+            />
           </div>
         )}
 
-        {hasBeenAnalyzed && (
+        {isFailed && (
+          <div className="flex flex-col gap-3">
+            <ErrorState
+              title="Analysis failed"
+              description={analysis?.error ?? "Something went wrong during analysis."}
+              action={
+                <Button
+                  variant="outline"
+                  onClick={() => retryMutation.mutate()}
+                  disabled={retryMutation.isPending}
+                >
+                  <RefreshCw aria-hidden className="mr-1.5 h-4 w-4" />
+                  {retryMutation.isPending ? "Retrying…" : "Retry analysis"}
+                </Button>
+              }
+            />
+          </div>
+        )}
+
+        {isReady && analysis?.recommendations && (
           <div className="flex flex-col gap-6">
             <SectionHeading as="h2">Suggested visualizations</SectionHeading>
 
-            {recommendationsQuery.isLoading && <ProcessingState label="Ranking visualizations…" />}
-            {recommendationsQuery.data && recommendationsQuery.data.top.length === 0 && (
+            {analysis.recommendations.shortfall_reason && (
+              <p className="text-sm text-muted-foreground">
+                {analysis.recommendations.shortfall_reason}
+              </p>
+            )}
+
+            {analysis.recommendations.top.length === 0 && (
               <EmptyState
                 title="No recommendations yet"
                 description="This dataset didn't produce any confident visualization candidates."
               />
             )}
-            {recommendationsQuery.data && recommendationsQuery.data.top.length > 0 && (
+            {analysis.recommendations.top.length > 0 && (
               <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
-                {recommendationsQuery.data.top.map((rec, index) => (
+                {analysis.recommendations.top.map((rec, index) => (
                   <RecommendationCard
                     key={rec.story_id}
                     recommendation={rec}
@@ -264,13 +287,13 @@ export default function DatasetDetailPage() {
               </div>
             )}
 
-            {recommendationsQuery.data && recommendationsQuery.data.derived.length > 0 && (
+            {analysis.recommendations.derived.length > 0 && (
               <div className="mt-4 flex flex-col gap-4">
                 <SectionHeading as="h2" className="text-lg">
                   Explore more
                 </SectionHeading>
                 <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
-                  {recommendationsQuery.data.derived.map((rec, index) => (
+                  {analysis.recommendations.derived.map((rec, index) => (
                     <RecommendationCard
                       key={rec.story_id}
                       recommendation={rec}

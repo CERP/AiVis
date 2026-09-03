@@ -10,7 +10,9 @@ from app.data.duckdb_engine import query_parquet_bytes
 from app.data.duckdb_engine import row_count as parquet_row_count
 from app.data.ingestion import IngestionError as ParseError
 from app.data.upload_validation import UploadValidationError, validate_upload
+from app.models.analysis import Analysis, AnalysisStatus
 from app.models.dataset import Dataset, DatasetStatus
+from app.repositories.analysis import AnalysisRepository
 from app.repositories.dataset import (
     DataProfileRepository,
     DatasetColumnRepository,
@@ -19,19 +21,16 @@ from app.repositories.dataset import (
 )
 from app.repositories.insight import InsightRepository, StoryRepository
 from app.repositories.project import ProjectRepository
+from app.schemas.analysis import AnalysisResponse
 from app.schemas.cleaning import CleaningRequest, CleaningResponse
 from app.schemas.dataset import DatasetResponse
 from app.schemas.insight import InsightResponse
 from app.schemas.profile import ColumnProfileResponse, DatasetProfileResponse
-from app.schemas.recommendation import RecommendationsResponse, VisualizationRecommendationResponse
 from app.schemas.rows import DatasetRowsResponse
 from app.schemas.story import StoryResponse
 from app.services.cleaning import CleaningError, apply_cleaning_operation
 from app.services.ingestion import ingest_dataset
-from app.services.insight_analysis import analyze_dataset_version
 from app.services.storage import get_storage_service
-from app.services.story_analysis import generate_stories_for_version
-from app.visualization.recommendation import generate_recommendations, split_top_and_derived
 
 router = APIRouter(prefix="/datasets", tags=["datasets"])
 
@@ -94,12 +93,26 @@ async def upload_dataset(
     await session.commit()
 
     try:
-        await ingest_dataset(session, dataset, extension, data)
+        version = await ingest_dataset(session, dataset, extension, data)
     except ParseError as exc:
         dataset.status = DatasetStatus.FAILED
         dataset.error_message = exc.message
         session.add(dataset)
         await session.commit()
+        await session.refresh(dataset)
+        return dataset
+
+    # Ingestion/profiling are automatic and synchronous (already fast); everything after that
+    # -- data quality, AI context, Gemini analysis, recommendations -- runs in the background
+    # worker (app/workers/main.py), which picks this row up via AnalysisRepository's
+    # SELECT ... FOR UPDATE SKIP LOCKED poll. The user never has to click "Analyze."
+    await AnalysisRepository(session).create(
+        Analysis(
+            dataset_id=dataset.id,
+            dataset_version_id=version.id,
+            status=AnalysisStatus.QUEUED,
+        )
+    )
 
     await session.refresh(dataset)
     return dataset
@@ -224,33 +237,50 @@ async def clean_dataset(
     )
 
 
-@router.post(
-    "/{dataset_id}/insights/analyze",
-    response_model=list[InsightResponse],
-    status_code=status.HTTP_201_CREATED,
-)
-async def analyze_insights(
+@router.get("/{dataset_id}/analysis", response_model=AnalysisResponse)
+async def get_analysis(
     dataset_id: uuid.UUID,
     organization_id: uuid.UUID = Depends(get_current_organization_id),
     session: AsyncSession = Depends(get_session),
-) -> list[InsightResponse]:
+) -> AnalysisResponse:
+    """Polled by the frontend after upload -- no manual 'Analyze' action exists. Progressively
+    exposes whichever of data_quality/ai_findings/recommendations the background pipeline has
+    completed so far; the client never needs to know the pipeline has multiple stages."""
     dataset = await DatasetRepository(session).get(dataset_id)
     if dataset is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Dataset not found")
     await _require_project(dataset.project_id, organization_id, session)
 
-    if dataset.status != DatasetStatus.READY:
+    analysis = await AnalysisRepository(session).get_latest_for_dataset(dataset_id)
+    if analysis is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No analysis found")
+
+    return AnalysisResponse.from_analysis(analysis)
+
+
+@router.post("/{dataset_id}/analysis/retry", response_model=AnalysisResponse)
+async def retry_analysis(
+    dataset_id: uuid.UUID,
+    organization_id: uuid.UUID = Depends(get_current_organization_id),
+    session: AsyncSession = Depends(get_session),
+) -> AnalysisResponse:
+    dataset = await DatasetRepository(session).get(dataset_id)
+    if dataset is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Dataset not found")
+    await _require_project(dataset.project_id, organization_id, session)
+
+    analysis_repo = AnalysisRepository(session)
+    analysis = await analysis_repo.get_latest_for_dataset(dataset_id)
+    if analysis is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No analysis found")
+    if analysis.status != AnalysisStatus.FAILED:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail=f"Dataset is not ready (status={dataset.status})",
+            detail=f"Analysis is not in a failed state (status={analysis.status})",
         )
 
-    version = await DatasetVersionRepository(session).get_latest(dataset_id)
-    if version is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No dataset version")
-
-    insights = await analyze_dataset_version(session, version)
-    return insights
+    analysis = await analysis_repo.requeue_for_retry(analysis)
+    return AnalysisResponse.from_analysis(analysis)
 
 
 @router.get("/{dataset_id}/insights", response_model=list[InsightResponse])
@@ -271,42 +301,6 @@ async def list_insights(
     return await InsightRepository(session).list_for_version(version.id)
 
 
-@router.post(
-    "/{dataset_id}/stories/analyze",
-    response_model=list[StoryResponse],
-    status_code=status.HTTP_201_CREATED,
-)
-async def analyze_stories(
-    dataset_id: uuid.UUID,
-    organization_id: uuid.UUID = Depends(get_current_organization_id),
-    session: AsyncSession = Depends(get_session),
-) -> list[StoryResponse]:
-    dataset = await DatasetRepository(session).get(dataset_id)
-    if dataset is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Dataset not found")
-    await _require_project(dataset.project_id, organization_id, session)
-
-    if dataset.status != DatasetStatus.READY:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail=f"Dataset is not ready (status={dataset.status})",
-        )
-
-    version = await DatasetVersionRepository(session).get_latest(dataset_id)
-    if version is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No dataset version")
-
-    existing_insights = await InsightRepository(session).list_for_version(version.id)
-    if not existing_insights:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="No insights found; run /insights/analyze first",
-        )
-
-    stories = await generate_stories_for_version(session, version)
-    return stories
-
-
 @router.get("/{dataset_id}/stories", response_model=list[StoryResponse])
 async def list_stories(
     dataset_id: uuid.UUID,
@@ -323,42 +317,6 @@ async def list_stories(
         return []
 
     return await StoryRepository(session).list_for_version(version.id)
-
-
-@router.get(
-    "/{dataset_id}/visualizations/recommendations", response_model=RecommendationsResponse
-)
-async def get_visualization_recommendations(
-    dataset_id: uuid.UUID,
-    organization_id: uuid.UUID = Depends(get_current_organization_id),
-    session: AsyncSession = Depends(get_session),
-) -> RecommendationsResponse:
-    dataset = await DatasetRepository(session).get(dataset_id)
-    if dataset is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Dataset not found")
-    await _require_project(dataset.project_id, organization_id, session)
-
-    version = await DatasetVersionRepository(session).get_latest(dataset_id)
-    if version is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No dataset version")
-
-    stories = await StoryRepository(session).list_for_version(version.id)
-    if not stories:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="No stories found; run /insights/analyze then /stories/analyze first",
-        )
-
-    columns = await DatasetColumnRepository(session).list_for_version(version.id)
-    semantic_types = {c.name: c.semantic_type for c in columns if c.semantic_type}
-
-    recommendations = generate_recommendations(stories, semantic_types, str(version.id))
-    top, derived = split_top_and_derived(recommendations)
-
-    return RecommendationsResponse(
-        top=[VisualizationRecommendationResponse(**r.__dict__) for r in top],
-        derived=[VisualizationRecommendationResponse(**r.__dict__) for r in derived],
-    )
 
 
 @router.get("/{dataset_id}/rows", response_model=DatasetRowsResponse)

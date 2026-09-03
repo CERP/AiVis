@@ -30,6 +30,14 @@ task entries below still describe the original story-engine acceptance criteria 
 part didn't change) — only the reader should mentally substitute "insight" for "story" wherever
 the phrasing sounds like journalism.
 
+**Automatic pipeline correction (this session — see Phase 34):** Phases 12/13/17's manual
+endpoints (`POST /insights/analyze`, `POST /stories/analyze`, `GET /visualizations/recommendations`)
+have been **removed from the public router**. Their service functions are unchanged and now
+called internally by `AnalysisOrchestrator` (`app/services/analysis_orchestrator.py`), triggered
+automatically the moment a dataset finishes ingesting — no manual "Analyze" click exists anymore.
+Read Phase 12-009/13-003/17-005 below as describing the *logic* (still accurate), not the
+now-removed HTTP surface — see Phase 34 for the current contract (`GET /api/datasets/:id/analysis`).
+
 ---
 
 ## Phase 0 — Project Discovery & Architecture
@@ -984,6 +992,123 @@ the phrasing sounds like journalism.
 ### P33-002 — task.md sync pass
 
 - [ ] Acceptance: statuses reflect true implementation state
+
+---
+
+## Phase 34 — Automatic Dataset Intelligence Pipeline
+
+Converts dataset analysis from user-triggered manual steps (click "Discover insights" → click
+implicit "Analyze stories" → fetch recommendations) into one automatic background pipeline that
+starts the moment upload finishes. Full detail in `backend-ai-pipeline-audit.md`.
+
+### P34-001 — Analysis domain object + lifecycle
+
+- [x] `app/models/analysis.py`: `Analysis` SQLModel (`dataset_id`, `dataset_version_id`, `status`,
+  `error`, `started_at`, `completed_at`, `retry_count`, `pipeline_version`, `prompt_version`,
+  `data_quality`/`ai_findings`/`recommendations` JSON columns). `AnalysisStatus` lifecycle:
+  `queued → profiling_quality → building_ai_context → ai_analyzing →
+  generating_recommendations → validating → ranking → generating_previews → ready|failed`.
+  Cascade-deletes with its dataset/version (`ondelete="CASCADE"` FKs — caught a real cross-table
+  delete failure via the full test suite and fixed it here, see P34-006).
+- Acceptance: migration applied — `alembic/versions/47b63b3d240e_add_analysis_table.py`, verified
+  via `alembic upgrade head` against live Postgres.
+
+### P34-002 — Data quality engine
+
+- [x] `app/insights/data_quality.py::analyze_data_quality` — deterministic checks: missing values,
+  duplicate rows, inconsistent categories (case/whitespace normalization), invalid dates
+  (name+pattern heuristic), outliers (reuses profiler stats, not recomputed), empty columns,
+  constant columns, high-cardinality categoricals. Score starts at 100, severity-weighted
+  penalties (high=15/medium=8/low=3), clamped to [0, 100].
+- Acceptance: unit tests — `tests/unit/test_data_quality.py`, 9/9 passing (clean data scores 100,
+  each issue type individually triggered and asserted, score never goes negative).
+
+### P34-003 — AI findings: Gemini wired into the recommendation path for the first time
+
+- [x] `app/ai/schemas.py::AnalyticalFindings`/`AnalyticalFinding` (typed `FindingType` enum,
+  field-list, confidence, optional suggested chart type from a fixed set). `app/ai/context_builder.py::build_analysis_context`
+  extends the existing PII-safe `DatasetSummary` with data-quality findings and already-detected
+  statistical relationships (reuses Phase 12's insight detectors as a grounding signal instead of
+  asking Gemini to re-derive them). `app/services/ai_findings.py::analyze_dataset_findings` —
+  same one-shot structured-generation pattern as Phase 11's `interpret_dataset`, same
+  prompt-injection-resistance system instruction. **Before this phase, nothing in the
+  insights/stories/recommendations chain ever called an AI provider** — confirmed via research
+  before implementing, not assumed.
+- Acceptance: unit tests — `tests/unit/test_ai_findings.py`, 5/5 passing (`FakeProvider` pattern
+  matching Phase 11's test double, schema rejects invalid type/out-of-range confidence/too many
+  findings).
+
+### P34-004 — AI findings wired into the deterministic recommendation engine (never trusted directly)
+
+- [x] `app/visualization/recommendation.py::generate_recommendations` gained an `ai_findings`
+  parameter. Every finding's `fields` are re-validated against the real dataset schema before use
+  — a finding referencing a nonexistent column is silently discarded, never surfaced. Redundancy
+  key changed from `(chart_type, fields)` to `fields` alone (a bar and a line chart over the same
+  two fields answer the same question — per the spec's explicit "Bar vs Horizontal Bar vs
+  Lollipop" guidance), so an AI finding that duplicates an existing Story-derived candidate's
+  field-set is dropped even if the chart type differs. `recommendation_shortfall_reason()` — when
+  a dataset genuinely can't support 8 non-redundant candidates, the API says so instead of padding
+  the list.
+- Acceptance: unit tests — `tests/unit/test_recommendation_ai_findings.py`, 4/4 passing
+  (hallucinated field discarded, new AI-only candidate added, AI finding redundant with an
+  existing story is dropped in favor of the deterministic one, unknown chart type falls back to
+  `bar`).
+
+### P34-005 — AnalysisOrchestrator + background worker (no new broker)
+
+- [x] `app/services/analysis_orchestrator.py::run_analysis` runs every stage for an already-claimed
+  `Analysis` row, committing `status` after each stage so a poller always sees real progress. AI
+  failure degrades gracefully (deterministic recommendations still produced, `ai_findings.error`
+  records what happened) rather than failing the whole analysis — any other stage failure sets
+  `status=failed` with a stage-prefixed error message. Insight/Story generation reuses the
+  existing Phase 12/13 service functions and is idempotent (a retry reuses already-persisted rows
+  instead of duplicating them). `app/workers/main.py` — real implementation now (was a
+  `sleep(60)` stub): polls `analyses` for `status='queued'` via `AnalysisRepository.claim_next_queued()`
+  (`SELECT ... FOR UPDATE SKIP LOCKED`), so multiple worker replicas can run the same loop
+  concurrently with zero new infrastructure (no Celery/RQ/arq — confirmed none existed before
+  adding this, and none were needed).
+- Deps: P34-001..004
+- Acceptance: integration test — `tests/integration/test_analysis_pipeline.py`, 4/4 passing (upload
+  auto-creates a `queued` Analysis, full pipeline run with a `FakeProvider` produces validated
+  persisted recommendations with no redundant field-sets, AI failure still yields ready
+  deterministic recommendations, retry rejected when not in `failed` state).
+
+### P34-006 — API contract + endpoint migration
+
+- [x] `POST /api/datasets` now creates the `Analysis` row automatically on ingestion success — no
+  response shape change, the pipeline just starts itself. New `GET /api/datasets/:id/analysis`
+  (status, real per-stage checklist, progressively-populated `data_quality`/`ai_findings`/
+  `recommendations`) and `POST /api/datasets/:id/analysis/retry` (409 unless `status=failed`).
+  Removed from the public router: `POST /insights/analyze`, `POST /stories/analyze`,
+  `GET /visualizations/recommendations` (logic reused internally, not deleted — see P34-005).
+  **Bug found and fixed via the full test suite, not assumed away:** deleting a dataset started
+  failing with a FK violation once `Analysis` rows existed, because `Analysis.dataset_version_id`
+  had no cascade — added `ondelete="CASCADE"` on both FKs.
+- Acceptance: full backend suite — 98/98 passing (`pytest -q`).
+
+### P34-007 — Frontend: automatic polling replaces the manual button
+
+- [x] `frontend/src/app/datasets/[datasetId]/page.tsx` — the "Discover insights" button and
+  `runAnalysis` mutation are gone. Polls `GET /api/datasets/:id/analysis` (same
+  `refetchInterval`-while-pending pattern used elsewhere in the app) and renders the real
+  per-stage checklist via the existing `StagedProcessing` component (now driven by the backend's
+  actual `stages` map, not a hardcoded 3-item array), a data-quality score/issue list matching the
+  spec's worked example, and a "Retry analysis" action on failure. `frontend/src/lib/api/analysis.ts`
+  (new) replaces the removed exports from `lib/api/insights.ts` (trimmed to just `getProfile`,
+  still needed elsewhere).
+- Deps: P34-006
+- Acceptance: `tsc --noEmit`, `eslint`, `vitest run` (16/16), `next build` all clean.
+
+### P34-008 — Explicitly deferred (flagged, not silently dropped)
+
+- [ ] SSE/WebSocket push (polling covers the requirement).
+- [ ] Dedicated observability/metrics table (structured `logging` fields on the worker cover
+  "record pipeline execution" without a new table).
+- [ ] Full dataset-hash/prompt-version caching layer beyond the `pipeline_version`/`prompt_version`
+  fields already on `Analysis`.
+- [ ] 8 golden-dataset fixtures (one fixture — `clean.csv` — proves the pipeline end-to-end).
+- [ ] Dataset-aware theme ranking (Phase 20's static ranking is unchanged this phase).
+- [ ] Copilot — explicitly out of scope per the user's own spec.
 
 ---
 

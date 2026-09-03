@@ -9,6 +9,8 @@ from __future__ import annotations
 
 from pydantic import BaseModel
 
+from app.insights.data_quality import DataQualityReport
+from app.models.insight import Insight
 from app.schemas.profile import DatasetProfileResponse
 
 
@@ -52,4 +54,66 @@ def build_dataset_summary(profile: DatasetProfileResponse) -> DatasetSummary:
         column_count=profile.column_count,
         columns=columns,
         redacted_column_names=redacted,
+    )
+
+
+class QualityIssueSummary(BaseModel):
+    type: str
+    column: str | None
+    description: str
+    severity: str
+
+
+class DetectedRelationship(BaseModel):
+    """A statistically-detected insight (app/insights/engine.py), already grounded in real
+    computation -- passed to Gemini as a hint, never invented by the model itself."""
+
+    type: str
+    fields: list[str]
+    confidence: float
+
+
+class AnalysisContext(BaseModel):
+    """The full AI-safe payload for the AnalyticalFindings prompt: the same dataset summary
+    used for semantic interpretation, plus data-quality findings and already-detected
+    statistical relationships/dimensions -- so Gemini reasons from real signals instead of
+    re-deriving (and possibly hallucinating) them from scratch."""
+
+    dataset: DatasetSummary
+    data_quality_score: int
+    data_quality_issues: list[QualityIssueSummary]
+    detected_relationships: list[DetectedRelationship]
+    time_dimensions: list[str]
+    geographic_dimensions: list[str]
+
+
+def build_analysis_context(
+    profile: DatasetProfileResponse,
+    data_quality: DataQualityReport,
+    insights: list[Insight],
+) -> AnalysisContext:
+    dataset = build_dataset_summary(profile)
+
+    time_dimensions = [
+        c.name for c in profile.columns if c.semantic_type == "date" and not c.is_pii
+    ]
+    geographic_dimensions = [
+        c.name for c in profile.columns if c.semantic_type == "geographic" and not c.is_pii
+    ]
+
+    return AnalysisContext(
+        dataset=dataset,
+        data_quality_score=data_quality.score,
+        data_quality_issues=[
+            QualityIssueSummary(
+                type=i.type, column=i.column, description=i.description, severity=i.severity
+            )
+            for i in data_quality.issues
+        ],
+        detected_relationships=[
+            DetectedRelationship(type=i.type.value, fields=i.fields, confidence=i.confidence)
+            for i in insights
+        ],
+        time_dimensions=time_dimensions,
+        geographic_dimensions=geographic_dimensions,
     )

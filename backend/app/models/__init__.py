@@ -1,5 +1,6 @@
 """Import every model module so SQLModel/SQLAlchemy can resolve string-based relationships."""
 
+from app.models.analysis import Analysis
 from app.models.audit import AuditLog
 from app.models.dataset import (
     CleaningOperation,
@@ -15,6 +16,7 @@ from app.models.user import Membership, Organization, User
 from app.models.visualization import Theme, Visualization, VisualizationVersion
 
 __all__ = [
+    "Analysis",
     "AuditLog",
     "CleaningOperation",
     "DataProfile",
