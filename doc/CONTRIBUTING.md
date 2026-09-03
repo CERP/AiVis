@@ -2,7 +2,7 @@
 
 ## Workflow
 
-1. Check [task.md](task.md) for the current backlog — respect task dependencies.
+1. Check [task.md](../task.md) for the current backlog — respect task dependencies.
 2. Implement the smallest coherent unit for a task.
 3. Test it (backend: `pytest`; frontend: `npm test` / manual browser check for UI).
 4. Update `task.md`: `[ ]` → `[x]` with a short completion note, or `[~]`/`[!]` if partial/blocked.

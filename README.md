@@ -8,7 +8,7 @@ at outlets like the NYT and WaPo — no proprietary assets or branding used.
 **Scope note:** the AI Visualization Copilot (chatbot) is a planned Phase 2 feature and is
 intentionally **not implemented**. The architecture (`VisualizationSpec`, `VisualizationCommand`,
 `AIProvider`) is designed so it can be added later without a rewrite. See
-[AI_ARCHITECTURE.md](AI_ARCHITECTURE.md).
+[AI_ARCHITECTURE.md](doc/AI_ARCHITECTURE.md).
 
 See [task.md](task.md) for the full engineering backlog and current status.
 
@@ -77,8 +77,8 @@ docker compose up
 
 ## Documentation
 
-- [ARCHITECTURE.md](ARCHITECTURE.md)
-- [SECURITY.md](SECURITY.md)
-- [DATA_ENGINE.md](DATA_ENGINE.md)
-- [VISUALIZATION_ENGINE.md](VISUALIZATION_ENGINE.md)
-- [AI_ARCHITECTURE.md](AI_ARCHITECTURE.md)
+- [ARCHITECTURE.md](doc/ARCHITECTURE.md)
+- [SECURITY.md](doc/SECURITY.md)
+- [DATA_ENGINE.md](doc/DATA_ENGINE.md)
+- [VISUALIZATION_ENGINE.md](doc/VISUALIZATION_ENGINE.md)
+- [AI_ARCHITECTURE.md](doc/AI_ARCHITECTURE.md)

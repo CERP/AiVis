@@ -935,6 +935,7 @@ Scope reminder: Chatbot / AI Visualization Copilot is FUTURE PHASE 2. Do not imp
 
 - [x] initial version written
 - Note: all docs are early skeletons reflecting planned architecture; must be kept in sync as each phase actually lands
+- Note: docs live under /doc (README.md and task.md stay at repo root).
 
 ---
 
