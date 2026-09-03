@@ -3,8 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { View } from "vega";
 
-import { DataTable } from "@/components/visualization/data-table";
-import { KPICard } from "@/components/visualization/kpi-card";
+import { renderNonVegaChart } from "@/components/visualization/non-vega-charts";
 import { getChartDefinition } from "@/lib/visualization/registry";
 import { compileToVegaLite } from "@/lib/visualization/to-vega-lite";
 import type { VisualizationSpec } from "@/lib/visualization/spec";
@@ -29,10 +28,13 @@ export function VisualizationRenderer({
   const containerRef = useRef<HTMLDivElement>(null);
   const [error, setError] = useState<string | null>(null);
 
-  const componentRenderer = getChartDefinition(spec.chart_type)?.renderer === "component";
+  // Chart types whose renderer isn't Vega-Lite (D3-drawn SVG, or a React component like the
+  // KPI card / data table / matrix) skip the vega-embed effect entirely.
+  const engine = getChartDefinition(spec.chart_type)?.renderer;
+  const nonVega = engine === "component" || engine === "d3" || engine === "map";
 
   useEffect(() => {
-    if (componentRenderer) return;
+    if (nonVega) return;
     let cancelled = false;
     let cleanup: (() => void) | undefined;
 
@@ -72,13 +74,11 @@ export function VisualizationRenderer({
     // including it would re-run this effect (and re-create the Vega view) whenever the
     // parent re-renders with a new inline function identity.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [spec, rows, theme, componentRenderer]);
+  }, [spec, rows, theme, nonVega]);
 
-  if (spec.chart_type === "kpi") {
-    return <KPICard spec={spec} rows={rows} />;
-  }
-  if (spec.chart_type === "table") {
-    return <DataTable rows={rows} title={spec.typography.title} />;
+  if (nonVega) {
+    const rendered = renderNonVegaChart(spec, rows, theme);
+    if (rendered) return rendered;
   }
 
   if (error) {

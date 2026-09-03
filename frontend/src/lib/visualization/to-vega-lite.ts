@@ -3,6 +3,7 @@ import type { TopLevelSpec } from "vega-lite";
 import type { ThemeTokens } from "@/lib/api/theme";
 
 import type { Annotation, Encoding, VisualizationSpec } from "./spec";
+import { type CompiledEncoding, VEGA_BUILDERS } from "./vega-builders";
 
 /**
  * Compiles our VisualizationSpec into a Vega-Lite spec, given inline row data. The renderer
@@ -101,6 +102,65 @@ export function textAnnotations(spec: VisualizationSpec): Annotation[] {
   return spec.annotations.filter((a) => a.type !== "reference_line");
 }
 
+/**
+ * Top-level sizing/title/theme config shared by every chart type, single-mark or layered.
+ *
+ * Vega's runtime merges this with its own built-in defaults (including the named color-scheme
+ * table for "category"/"heatmap"/"diverging"). Setting a key to an explicit `undefined` --
+ * rather than omitting it -- overwrites/wipes that default during the merge, which previously
+ * broke every chart with a color encoding when no theme was supplied ("Unrecognized scale range
+ * value"). `range` is therefore spread in conditionally rather than always present.
+ */
+function buildSharedTopLevel(
+  spec: VisualizationSpec,
+  theme?: ThemeTokens
+): Record<string, unknown> {
+  return {
+    $schema: "https://vega.github.io/schema/vega-lite/v6.json",
+    width: spec.layout.width ?? "container",
+    height: spec.layout.height ?? 320,
+    title: spec.typography.title ?? undefined,
+    background: theme?.background,
+    config: {
+      legend: {
+        disable: !spec.layout.show_legend,
+        titleColor: theme?.foreground,
+        titleFont: theme?.headline_font,
+        titleFontWeight: "bold" as const,
+        titleFontSize: 12,
+        labelColor: theme?.foreground,
+        labelFont: theme?.body_font,
+        labelFontSize: 11,
+        symbolSize: 80,
+        orient: "top" as const,
+      },
+      axis: {
+        grid: spec.layout.show_grid,
+        gridColor: theme?.grid,
+        gridOpacity: 0.6,
+        domainColor: theme?.border,
+        tickColor: theme?.border,
+        labelColor: theme?.foreground,
+        labelFont: theme?.body_font,
+        labelFontSize: 11,
+        titleColor: theme?.foreground,
+        titleFont: theme?.body_font,
+        titleFontWeight: "bold" as const,
+        titleFontSize: 12,
+        titlePadding: 12,
+      },
+      title: {
+        color: theme?.foreground,
+        font: theme?.headline_font,
+        fontWeight: "bold" as const,
+        fontSize: 16,
+        anchor: "start" as const,
+      },
+      ...(theme ? { range: { category: rangeForPaletteType(theme) } } : {}),
+    },
+  };
+}
+
 export function compileToVegaLite(
   spec: VisualizationSpec,
   rows: Record<string, unknown>[],
@@ -115,6 +175,39 @@ export function compileToVegaLite(
   let y = compileEncoding(spec.encoding.y);
   const color = compileEncoding(spec.encoding.color);
   const size = compileEncoding(spec.encoding.size);
+
+  // Chart types whose geometry is more than "one mark + channel map" (layers, window
+  // transforms, or precomputed cell rectangles) are delegated to a builder keyed by chart_type,
+  // so this function never grows a per-chart conditional chain.
+  const builder = VEGA_BUILDERS[spec.chart_type];
+  if (builder) {
+    const built = builder({
+      encoding: spec.encoding,
+      compiled: {
+        x,
+        y,
+        color,
+        size,
+        detail: compileEncoding(spec.encoding.detail),
+        x2: compileEncoding(spec.encoding.x2),
+        y2: compileEncoding(spec.encoding.y2),
+        measure2: compileEncoding(spec.encoding.measure2),
+        open: compileEncoding(spec.encoding.open),
+        high: compileEncoding(spec.encoding.high),
+        low: compileEncoding(spec.encoding.low),
+        close: compileEncoding(spec.encoding.close),
+      } as Record<string, CompiledEncoding | undefined>,
+      rows,
+      markColor: theme?.categorical_colors[0],
+      positiveColor: theme?.positive_color,
+      negativeColor: theme?.negative_color,
+    });
+    return {
+      ...buildSharedTopLevel(spec, theme),
+      data: { values: rows },
+      ...built,
+    } as TopLevelSpec;
+  }
 
   // A horizontal bar is a vertical bar with x/y exchanged -- genuinely correct, not a visual
   // approximation, since Vega-Lite's bar mark is symmetric in this respect.
@@ -175,57 +268,7 @@ export function compileToVegaLite(
   };
   const referenceLineLayers = buildReferenceLineLayers(spec, theme?.negative_color);
 
-  // Vega's runtime merges this config with its own built-in defaults (including the named
-  // color-scheme table for "category"/"heatmap"/"diverging" etc). Setting a key to an explicit
-  // `undefined` -- rather than omitting it -- overwrites/wipes that default during the merge
-  // (unlike a plain absent key), which broke every chart with a nominal or quantitative color
-  // encoding when no theme was supplied ("Unrecognized scale range value: 'category'"/'heatmap'"
-  // at render time). `range` is the only key this ever affected in practice, so it's spread in
-  // conditionally instead of always being present with a possibly-undefined value.
-  const sharedTopLevel = {
-    $schema: "https://vega.github.io/schema/vega-lite/v6.json",
-    width: spec.layout.width ?? "container",
-    height: spec.layout.height ?? 320,
-    title: spec.typography.title ?? undefined,
-    background: theme?.background,
-    config: {
-      legend: {
-        disable: !spec.layout.show_legend,
-        titleColor: theme?.foreground,
-        titleFont: theme?.headline_font,
-        titleFontWeight: "bold" as const,
-        titleFontSize: 12,
-        labelColor: theme?.foreground,
-        labelFont: theme?.body_font,
-        labelFontSize: 11,
-        symbolSize: 80,
-        orient: "top" as const,
-      },
-      axis: {
-        grid: spec.layout.show_grid,
-        gridColor: theme?.grid,
-        gridOpacity: 0.6,
-        domainColor: theme?.border,
-        tickColor: theme?.border,
-        labelColor: theme?.foreground,
-        labelFont: theme?.body_font,
-        labelFontSize: 11,
-        titleColor: theme?.foreground,
-        titleFont: theme?.body_font,
-        titleFontWeight: "bold" as const,
-        titleFontSize: 12,
-        titlePadding: 12,
-      },
-      title: {
-        color: theme?.foreground,
-        font: theme?.headline_font,
-        fontWeight: "bold" as const,
-        fontSize: 16,
-        anchor: "start" as const,
-      },
-      ...(theme ? { range: { category: rangeForPaletteType(theme) } } : {}),
-    },
-  };
+  const sharedTopLevel = buildSharedTopLevel(spec, theme);
 
   if (referenceLineLayers.length === 0) {
     return { ...sharedTopLevel, ...baseLayer } as TopLevelSpec;

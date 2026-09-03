@@ -4,10 +4,10 @@ is the compatibility-engine source of truth: `validate_spec()` uses it to reject
 unimplemented chart types, and the recommendation engine uses `IMPLEMENTED_CHART_TYPES` to
 decide what Gemini/deterministic detectors are even allowed to suggest.
 
-A chart type existing here with `implemented=False` is a deliberate, documented architectural
-placeholder (matches the pre-existing pattern for treemap/choropleth/sankey) -- never treated as
-"done." See `aivis-visualization-library-verification.md` for the full audit of what's genuinely
-renderable vs. blocked, and why.
+All 42 entries (the 41 required types plus `grouped_bar`) are implemented: Vega-Lite for the
+mark/layer/transform-expressible ones, D3 for layout-dependent ones (hierarchy, force, chord,
+sankey, geo projections), and React components for KPI/table/matrix. See
+`aivis-visualization-library-verification.md` for the per-type renderer and evidence.
 """
 
 from __future__ import annotations
@@ -48,45 +48,71 @@ CHART_DEFINITIONS: tuple[ChartDefinition, ...] = (
     _c("stacked_bar_horizontal", "comparison", "categorical", "numeric", implemented=True),
     _c("grouped_bar", "comparison", "categorical", "numeric", implemented=True),
     _c("sorted_bar", "comparison", "categorical", "numeric", implemented=True),
-    _c("lollipop", "comparison", "categorical", "numeric"),
-    _c("radar", "comparison", "categorical", "numeric"),
-    _c("bullet", "comparison", "numeric"),
+    _c("lollipop", "comparison", "categorical", "numeric", implemented=True),
+    _c("radar", "comparison", "categorical", "numeric", implemented=True),
+    _c("bullet", "comparison", "numeric", implemented=True),
     _c("line", "temporal", "date", "numeric", requires_temporal=True, implemented=True),
     _c("area", "temporal", "date", "numeric", requires_temporal=True, implemented=True),
     _c("sparkline", "temporal", "date", "numeric", requires_temporal=True, implemented=True),
-    _c("candlestick", "temporal", "date", requires_temporal=True, requires_ohlc=True),
-    _c("ohlc", "temporal", "date", requires_temporal=True, requires_ohlc=True),
-    _c("ribbon", "temporal", "date", "categorical", "numeric", requires_temporal=True),
-    _c("bump", "temporal", "date", "categorical", "numeric", requires_temporal=True),
-    _c("line_column", "comparison", "categorical", "date", "numeric"),
+    _c(
+        "candlestick", "temporal", "date",
+        requires_temporal=True, requires_ohlc=True, implemented=True,
+    ),
+    _c("ohlc", "temporal", "date", requires_temporal=True, requires_ohlc=True, implemented=True),
+    _c(
+        "ribbon", "temporal", "date", "categorical", "numeric",
+        requires_temporal=True, implemented=True,
+    ),
+    _c(
+        "bump", "temporal", "date", "categorical", "numeric",
+        requires_temporal=True, implemented=True,
+    ),
+    _c("line_column", "comparison", "categorical", "date", "numeric", implemented=True),
     _c("pie", "part_to_whole", "categorical", "numeric", implemented=True),
     _c("donut", "part_to_whole", "categorical", "numeric", implemented=True),
-    _c("treemap", "hierarchical", "categorical", "numeric", requires_hierarchical=True),
-    _c("sunburst", "hierarchical", "categorical", "numeric", requires_hierarchical=True),
+    _c(
+        "treemap", "hierarchical", "categorical", "numeric",
+        requires_hierarchical=True, implemented=True,
+    ),
+    _c(
+        "sunburst", "hierarchical", "categorical", "numeric",
+        requires_hierarchical=True, implemented=True,
+    ),
     _c("waterfall", "part_to_whole", "categorical", "numeric", implemented=True),
     _c("histogram", "distribution", "numeric", implemented=True),
     _c("box_plot", "distribution", "categorical", "numeric", implemented=True),
-    _c("violin", "distribution", "categorical", "numeric"),
-    _c("marimekko", "distribution", "categorical", "numeric"),
+    _c("violin", "distribution", "categorical", "numeric", implemented=True),
+    _c("marimekko", "distribution", "categorical", "numeric", implemented=True),
     _c("scatter", "relationship", "numeric", implemented=True),
     _c("bubble", "relationship", "numeric", implemented=True),
     _c("heatmap", "relationship", "categorical", "numeric", implemented=True),
-    _c("network", "relationship", "categorical", requires_relational=True),
-    _c("chord", "relationship", "categorical", "numeric", requires_relational=True),
-    _c("funnel", "flow", "categorical", "numeric"),
-    _c("gantt", "flow", "date", "categorical", requires_temporal=True),
-    _c("sankey", "flow", "categorical", "numeric", requires_relational=True),
-    _c("decomposition_tree", "hierarchical", "categorical", "numeric", requires_hierarchical=True),
-    _c("choropleth", "geographic", "geographic", "numeric", requires_geographic=True),
-    _c("bubble_map", "geographic", "geographic", "numeric", requires_geographic=True),
+    _c("network", "relationship", "categorical", requires_relational=True, implemented=True),
+    _c(
+        "chord", "relationship", "categorical", "numeric",
+        requires_relational=True, implemented=True,
+    ),
+    _c("funnel", "flow", "categorical", "numeric", implemented=True),
+    _c("gantt", "flow", "date", "categorical", requires_temporal=True, implemented=True),
+    _c("sankey", "flow", "categorical", "numeric", requires_relational=True, implemented=True),
+    _c(
+        "decomposition_tree", "hierarchical", "categorical", "numeric",
+        requires_hierarchical=True, implemented=True,
+    ),
+    _c(
+        "choropleth", "geographic", "geographic", "numeric",
+        requires_geographic=True, implemented=True,
+    ),
+    _c(
+        "bubble_map", "geographic", "geographic", "numeric",
+        requires_geographic=True, implemented=True,
+    ),
     _c(
         "flow_map", "geographic", "geographic", "numeric",
-        requires_geographic=True, requires_relational=True,
-    ),
+        requires_geographic=True, requires_relational=True, implemented=True),
     _c("kpi", "single_metric", "numeric", implemented=True),
-    _c("gauge", "single_metric", "numeric"),
+    _c("gauge", "single_metric", "numeric", implemented=True),
     _c("table", "raw_data", implemented=True),
-    _c("matrix", "raw_data", "categorical", "numeric"),
+    _c("matrix", "raw_data", "categorical", "numeric", implemented=True),
 )
 
 CHART_DEFINITIONS_BY_ID: dict[str, ChartDefinition] = {c.id: c for c in CHART_DEFINITIONS}

@@ -34,7 +34,35 @@ REQUIRED_ENCODINGS: dict[str, tuple[str, ...]] = {
     "donut": ("color", "size"),
     "pie": ("color", "size"),
     "kpi": ("size",),
+    # --- Added when the remaining chart types were implemented ---
+    "lollipop": ("x", "y"),
+    "bullet": ("x", "y"),
+    "bump": ("x", "y", "color"),
+    "ribbon": ("x", "y", "color"),
+    "marimekko": ("x", "y", "size"),
+    "gantt": ("x", "x2", "y"),
+    "candlestick": ("x", "open", "high", "low", "close"),
+    "ohlc": ("x", "open", "high", "low", "close"),
+    "line_column": ("x", "y", "measure2"),
+    "treemap": ("detail", "size"),
+    "sunburst": ("detail", "size"),
+    "decomposition_tree": ("detail", "size"),
+    "network": ("x", "y", "size"),
+    "chord": ("x", "y", "size"),
+    "sankey": ("x", "y", "size"),
+    "flow_map": ("x", "y", "size"),
+    "violin": ("x", "y"),
+    "funnel": ("x", "y"),
+    "gauge": ("size",),
+    "radar": ("x", "y", "color"),
+    "choropleth": ("x", "color"),
+    "bubble_map": ("x", "y", "size"),
+    "matrix": ("x", "y", "size"),
 }
+
+# Channels that must appear together or not at all -- a partially-specified OHLC set is never
+# a valid chart, it's a half-configured one, and rendering it would silently drop a price.
+_CHANNEL_GROUPS: tuple[tuple[str, ...], ...] = (("open", "high", "low", "close"),)
 
 _SEMANTIC_TO_COMPATIBLE_ENCODINGS: dict[str, set[EncodingType]] = {
     "numeric": {EncodingType.QUANTITATIVE, EncodingType.ORDINAL},
@@ -64,25 +92,34 @@ def validate_spec(
     elif spec.chart_type not in IMPLEMENTED_CHART_TYPES:
         errors.append(f"Chart type '{spec.chart_type}' is not implemented yet")
 
-    required_channels = REQUIRED_ENCODINGS.get(spec.chart_type, ())
-    encoding_by_channel = {
+    encoding_by_channel: dict[str, Encoding | None] = {
         "x": spec.encoding.x,
         "y": spec.encoding.y,
         "color": spec.encoding.color,
         "size": spec.encoding.size,
         "detail": spec.encoding.detail,
+        "x2": spec.encoding.x2,
+        "y2": spec.encoding.y2,
+        "measure2": spec.encoding.measure2,
+        "open": spec.encoding.open,
+        "high": spec.encoding.high,
+        "low": spec.encoding.low,
+        "close": spec.encoding.close,
     }
-    for channel in required_channels:
+
+    for channel in REQUIRED_ENCODINGS.get(spec.chart_type, ()):
         if encoding_by_channel.get(channel) is None:
             errors.append(f"Chart type '{spec.chart_type}' requires a '{channel}' encoding")
 
-    encodings: list[tuple[str, Encoding | None]] = [
-        ("x", spec.encoding.x),
-        ("y", spec.encoding.y),
-        ("color", spec.encoding.color),
-        ("size", spec.encoding.size),
-        ("detail", spec.encoding.detail),
-    ]
+    for group in _CHANNEL_GROUPS:
+        present = [c for c in group if encoding_by_channel.get(c) is not None]
+        if present and len(present) != len(group):
+            missing = ", ".join(c for c in group if c not in present)
+            errors.append(
+                f"Channels ({', '.join(group)}) must be set together; missing: {missing}"
+            )
+
+    encodings: list[tuple[str, Encoding | None]] = list(encoding_by_channel.items())
 
     for channel, encoding in encodings:
         if encoding is None:

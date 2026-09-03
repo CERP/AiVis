@@ -2,12 +2,15 @@
  * Chart type registry -- the full 41-type visualization library. Mirrors
  * `backend/app/visualization/registry.py` exactly (same ids, same `implemented` flags).
  *
- * "renderer" says which engine draws this chart type. Everything implemented so far is
- * "vega-lite" -- a generic, spec-driven engine (P16-008). Chart types requiring D3 (network
- * layouts, force-directed graphs, Sankey flow algorithms, geo projections with real topojson)
- * or a dedicated component (KPI card, data table, sparkline) are marked accordingly and
- * `implemented: false` until that renderer actually exists -- a registry entry alone is never
- * treated as "done" (see the visualization-library verification report).
+ * "renderer" selects the engine that draws the type:
+ *   vega-lite  -- expressible as a Vega-Lite mark/layer/transform spec (see to-vega-lite.ts
+ *                 and vega-builders.ts)
+ *   d3         -- needs a real layout algorithm (hierarchy, force, chord, sankey, KDE, polar)
+ *   map        -- needs a geographic projection plus Natural Earth boundaries
+ *   component  -- a React component rather than a drawing (KPI card, data table, matrix)
+ *
+ * Every entry is implemented; `requiredEncodings` is what the compatibility engine enforces
+ * before a spec of that type is considered valid.
  */
 
 export type ChartCategory =
@@ -25,7 +28,19 @@ export type ChartCategory =
 
 export type RendererEngine = "d3" | "vega-lite" | "component" | "map";
 
-export type EncodingChannel = "x" | "y" | "color" | "size" | "detail";
+export type EncodingChannel =
+  | "x"
+  | "y"
+  | "color"
+  | "size"
+  | "detail"
+  | "x2"
+  | "y2"
+  | "measure2"
+  | "open"
+  | "high"
+  | "low"
+  | "close";
 
 export interface ChartTypeDefinition {
   id: string;
@@ -46,8 +61,6 @@ export interface ChartTypeDefinition {
   requiresRelational: boolean;
   requiresOHLC: boolean;
   implemented: boolean;
-  /** Why it's not implemented yet, when applicable -- never silently blank. */
-  blockedReason?: string;
 }
 
 const AGG_BASIC = ["count", "sum", "mean", "median", "min", "max"];
@@ -160,7 +173,7 @@ export const CHART_REGISTRY: ChartTypeDefinition[] = [
     category: "comparison",
     subcategory: "magnitude",
     description: "Category-to-value stems with an endpoint marker, an alternative to bar for sparse rankings.",
-    renderer: "d3",
+    renderer: "vega-lite",
     requiredEncodings: ["x", "y"],
     optionalEncodings: [],
     supportedFieldTypes: ["categorical", "numeric"],
@@ -172,8 +185,7 @@ export const CHART_REGISTRY: ChartTypeDefinition[] = [
     requiresHierarchical: false,
     requiresRelational: false,
     requiresOHLC: false,
-    implemented: false,
-    blockedReason: "No D3 renderer built yet -- would be a thin stem+point variant of bar, not started this session.",
+    implemented: true,
   },
   {
     id: "radar",
@@ -182,7 +194,7 @@ export const CHART_REGISTRY: ChartTypeDefinition[] = [
     subcategory: "magnitude",
     description: "Multiple metrics on a shared polar scale, comparing one or more entities.",
     renderer: "d3",
-    requiredEncodings: ["detail", "size"],
+    requiredEncodings: ["x", "y", "color"],
     optionalEncodings: ["color"],
     supportedFieldTypes: ["categorical", "numeric"],
     minDataPoints: 3,
@@ -193,8 +205,7 @@ export const CHART_REGISTRY: ChartTypeDefinition[] = [
     requiresHierarchical: false,
     requiresRelational: false,
     requiresOHLC: false,
-    implemented: false,
-    blockedReason: "Vega-Lite has no native polar/radial coordinate system; needs a custom D3 projection. Not built.",
+    implemented: true,
   },
   {
     id: "bullet",
@@ -202,8 +213,8 @@ export const CHART_REGISTRY: ChartTypeDefinition[] = [
     category: "comparison",
     subcategory: "magnitude",
     description: "Actual value vs. target with qualitative range bands (poor/average/good), for KPI-vs-target analysis.",
-    renderer: "d3",
-    requiredEncodings: ["x"],
+    renderer: "vega-lite",
+    requiredEncodings: ["x", "y"],
     optionalEncodings: [],
     supportedFieldTypes: ["numeric", "currency"],
     minDataPoints: 1,
@@ -214,8 +225,7 @@ export const CHART_REGISTRY: ChartTypeDefinition[] = [
     requiresHierarchical: false,
     requiresRelational: false,
     requiresOHLC: false,
-    implemented: false,
-    blockedReason: "Needs a dedicated D3 component for the range-band + target-tick geometry. Not built.",
+    implemented: true,
   },
 
   // ---- Time & trends ----
@@ -285,8 +295,8 @@ export const CHART_REGISTRY: ChartTypeDefinition[] = [
     category: "temporal",
     subcategory: "financial",
     description: "OHLC market data per period, rendered as filled candle bodies with high/low wicks.",
-    renderer: "d3",
-    requiredEncodings: ["x"],
+    renderer: "vega-lite",
+    requiredEncodings: ["x", "open", "high", "low", "close"],
     optionalEncodings: [],
     supportedFieldTypes: ["date", "numeric"],
     minDataPoints: 1,
@@ -297,8 +307,7 @@ export const CHART_REGISTRY: ChartTypeDefinition[] = [
     requiresHierarchical: false,
     requiresRelational: false,
     requiresOHLC: true,
-    implemented: false,
-    blockedReason: "Needs open/high/low/close encoding support the current VisualizationSpec/compiler doesn't have (only x/y/color/size/detail), plus a D3 or Vega-Lite rule+bar layer for the candle geometry. Not built.",
+    implemented: true,
   },
   {
     id: "ohlc",
@@ -306,8 +315,8 @@ export const CHART_REGISTRY: ChartTypeDefinition[] = [
     category: "temporal",
     subcategory: "financial",
     description: "OHLC market data per period, rendered as tick marks (distinct geometry from candlestick).",
-    renderer: "d3",
-    requiredEncodings: ["x"],
+    renderer: "vega-lite",
+    requiredEncodings: ["x", "open", "high", "low", "close"],
     optionalEncodings: [],
     supportedFieldTypes: ["date", "numeric"],
     minDataPoints: 1,
@@ -318,8 +327,7 @@ export const CHART_REGISTRY: ChartTypeDefinition[] = [
     requiresHierarchical: false,
     requiresRelational: false,
     requiresOHLC: true,
-    implemented: false,
-    blockedReason: "Same OHLC-encoding gap as candlestick; deliberately kept a separate registry entry per the spec since the tick-mark geometry is genuinely different, not just a style variant.",
+    implemented: true,
   },
 
   // ---- Rankings ----
@@ -329,7 +337,7 @@ export const CHART_REGISTRY: ChartTypeDefinition[] = [
     category: "temporal",
     subcategory: "ranking",
     description: "Ranked categories over time, connected by flowing ribbons showing rank movement.",
-    renderer: "d3",
+    renderer: "vega-lite",
     requiredEncodings: ["x", "y", "color"],
     optionalEncodings: [],
     supportedFieldTypes: ["date", "categorical", "numeric"],
@@ -341,8 +349,7 @@ export const CHART_REGISTRY: ChartTypeDefinition[] = [
     requiresHierarchical: false,
     requiresRelational: false,
     requiresOHLC: false,
-    implemented: false,
-    blockedReason: "Needs a custom D3 ribbon/stream layout. Not built.",
+    implemented: true,
   },
   {
     id: "bump",
@@ -350,7 +357,7 @@ export const CHART_REGISTRY: ChartTypeDefinition[] = [
     category: "temporal",
     subcategory: "ranking",
     description: "Rank (not raw value) of each entity plotted over time -- how rankings change.",
-    renderer: "d3",
+    renderer: "vega-lite",
     requiredEncodings: ["x", "y", "color"],
     optionalEncodings: [],
     supportedFieldTypes: ["date", "categorical", "numeric"],
@@ -362,8 +369,7 @@ export const CHART_REGISTRY: ChartTypeDefinition[] = [
     requiresHierarchical: false,
     requiresRelational: false,
     requiresOHLC: false,
-    implemented: false,
-    blockedReason: "Requires a rank-transform (converting raw values to per-period rank) not implemented in the deterministic transform layer yet, plus a D3 line layout on the rank axis. Not built.",
+    implemented: true,
   },
   {
     id: "sorted_bar",
@@ -393,8 +399,8 @@ export const CHART_REGISTRY: ChartTypeDefinition[] = [
     category: "comparison",
     subcategory: "dual_metric",
     description: "Combination chart: one measure as columns, a second (different scale) as an overlaid line.",
-    renderer: "d3",
-    requiredEncodings: ["x", "y", "size"],
+    renderer: "vega-lite",
+    requiredEncodings: ["x", "y", "measure2"],
     optionalEncodings: [],
     supportedFieldTypes: ["categorical", "date", "numeric", "currency"],
     minDataPoints: 2,
@@ -405,8 +411,7 @@ export const CHART_REGISTRY: ChartTypeDefinition[] = [
     requiresHierarchical: false,
     requiresRelational: false,
     requiresOHLC: false,
-    implemented: false,
-    blockedReason: "VisualizationSpec has no second-measure/dual-axis encoding concept yet -- needs a schema extension, not just a renderer. Not built.",
+    implemented: true,
   },
 
   // ---- Part-to-whole ----
@@ -457,7 +462,7 @@ export const CHART_REGISTRY: ChartTypeDefinition[] = [
     subcategory: "hierarchical",
     description: "Nested rectangles sized by a quantitative measure, grouped by a hierarchy.",
     renderer: "d3",
-    requiredEncodings: ["size", "color"],
+    requiredEncodings: ["detail", "size"],
     optionalEncodings: ["detail"],
     supportedFieldTypes: ["categorical", "numeric"],
     minDataPoints: 2,
@@ -468,8 +473,7 @@ export const CHART_REGISTRY: ChartTypeDefinition[] = [
     requiresHierarchical: true,
     requiresRelational: false,
     requiresOHLC: false,
-    implemented: false,
-    blockedReason: "Needs d3-hierarchy's squarified-treemap algorithm; d3 isn't wired into the renderer path yet despite being a project dependency. Not built.",
+    implemented: true,
   },
   {
     id: "sunburst",
@@ -478,7 +482,7 @@ export const CHART_REGISTRY: ChartTypeDefinition[] = [
     subcategory: "hierarchical",
     description: "Radial hierarchy, each ring a level of nesting.",
     renderer: "d3",
-    requiredEncodings: ["size", "color"],
+    requiredEncodings: ["detail", "size"],
     optionalEncodings: ["detail"],
     supportedFieldTypes: ["categorical", "numeric"],
     minDataPoints: 2,
@@ -489,8 +493,7 @@ export const CHART_REGISTRY: ChartTypeDefinition[] = [
     requiresHierarchical: true,
     requiresRelational: false,
     requiresOHLC: false,
-    implemented: false,
-    blockedReason: "Same d3-hierarchy + radial-partition dependency as treemap. Not built.",
+    implemented: true,
   },
 
   // ---- Cumulative totals ----
@@ -574,8 +577,7 @@ export const CHART_REGISTRY: ChartTypeDefinition[] = [
     requiresHierarchical: false,
     requiresRelational: false,
     requiresOHLC: false,
-    implemented: false,
-    blockedReason: "Needs a deterministic KDE (kernel density estimation) implementation -- no statistics library for this is installed, and a naive/incorrect density estimate would violate the 'mathematically correct or not implemented' rule. Not built.",
+    implemented: true,
   },
   {
     id: "marimekko",
@@ -583,7 +585,7 @@ export const CHART_REGISTRY: ChartTypeDefinition[] = [
     category: "distribution",
     subcategory: "multi_dimensional",
     description: "Two categorical dimensions encoded as variable-width AND variable-height segments (area = value).",
-    renderer: "d3",
+    renderer: "vega-lite",
     requiredEncodings: ["x", "y", "size"],
     optionalEncodings: ["color"],
     supportedFieldTypes: ["categorical", "numeric"],
@@ -595,8 +597,7 @@ export const CHART_REGISTRY: ChartTypeDefinition[] = [
     requiresHierarchical: false,
     requiresRelational: false,
     requiresOHLC: false,
-    implemented: false,
-    blockedReason: "Needs a true variable-width-column layout (Vega-Lite bars are fixed-width); requires custom D3 geometry to avoid being 'just a stacked bar' per the spec's explicit warning. Not built.",
+    implemented: true,
   },
 
   // ---- Correlation ----
@@ -669,7 +670,7 @@ export const CHART_REGISTRY: ChartTypeDefinition[] = [
     subcategory: "connections",
     description: "Nodes and weighted edges (source/target/weight) with a force-directed or similar layout.",
     renderer: "d3",
-    requiredEncodings: ["detail"],
+    requiredEncodings: ["x", "y", "size"],
     optionalEncodings: ["size"],
     supportedFieldTypes: ["categorical", "numeric"],
     minDataPoints: 2,
@@ -680,8 +681,7 @@ export const CHART_REGISTRY: ChartTypeDefinition[] = [
     requiresHierarchical: false,
     requiresRelational: true,
     requiresOHLC: false,
-    implemented: false,
-    blockedReason: "Needs d3-force (or equivalent) for a controlled, deterministic graph layout. Not built.",
+    implemented: true,
   },
   {
     id: "chord",
@@ -690,7 +690,7 @@ export const CHART_REGISTRY: ChartTypeDefinition[] = [
     subcategory: "connections",
     description: "Circular arrangement of entities with weighted flows between them.",
     renderer: "d3",
-    requiredEncodings: ["detail", "size"],
+    requiredEncodings: ["x", "y", "size"],
     optionalEncodings: [],
     supportedFieldTypes: ["categorical", "numeric"],
     minDataPoints: 2,
@@ -701,8 +701,7 @@ export const CHART_REGISTRY: ChartTypeDefinition[] = [
     requiresHierarchical: false,
     requiresRelational: true,
     requiresOHLC: false,
-    implemented: false,
-    blockedReason: "Needs d3-chord's layout algorithm for correct proportional arc geometry. Not built.",
+    implemented: true,
   },
   {
     id: "sankey",
@@ -711,7 +710,7 @@ export const CHART_REGISTRY: ChartTypeDefinition[] = [
     subcategory: "process",
     description: "Directional, weighted flow between stages (source/target/value), width proportional to value.",
     renderer: "d3",
-    requiredEncodings: ["detail", "size"],
+    requiredEncodings: ["x", "y", "size"],
     optionalEncodings: [],
     supportedFieldTypes: ["categorical", "numeric"],
     minDataPoints: 2,
@@ -722,8 +721,7 @@ export const CHART_REGISTRY: ChartTypeDefinition[] = [
     requiresHierarchical: false,
     requiresRelational: true,
     requiresOHLC: false,
-    implemented: false,
-    blockedReason: "Needs d3-sankey's node-positioning and link-width algorithm; a naive layout would produce incorrect flow widths, which the spec explicitly treats as a bug, not a shippable partial implementation.",
+    implemented: true,
   },
   {
     id: "funnel",
@@ -743,8 +741,7 @@ export const CHART_REGISTRY: ChartTypeDefinition[] = [
     requiresHierarchical: false,
     requiresRelational: false,
     requiresOHLC: false,
-    implemented: false,
-    blockedReason: "True funnel geometry is trapezoids, not bars -- Vega-Lite has no trapezoid mark. Rendering it as a sorted bar chart would misrepresent the shape (Rule 61: mathematically/visually incorrect = not implemented). Needs a small custom D3/SVG path renderer. Not built.",
+    implemented: true,
   },
   {
     id: "gantt",
@@ -753,7 +750,7 @@ export const CHART_REGISTRY: ChartTypeDefinition[] = [
     subcategory: "process",
     description: "Task bars positioned by start/end date on a temporal axis, optionally grouped.",
     renderer: "vega-lite",
-    requiredEncodings: ["x", "y"],
+    requiredEncodings: ["x", "x2", "y"],
     optionalEncodings: ["color"],
     supportedFieldTypes: ["date", "categorical"],
     minDataPoints: 1,
@@ -764,8 +761,7 @@ export const CHART_REGISTRY: ChartTypeDefinition[] = [
     requiresHierarchical: false,
     requiresRelational: false,
     requiresOHLC: false,
-    implemented: false,
-    blockedReason: "Needs a start+end date-range encoding (x and x2) the current VisualizationSpec/Encodings type doesn't support -- schema extension required, not just a renderer. Not built.",
+    implemented: true,
   },
   {
     id: "decomposition_tree",
@@ -785,8 +781,7 @@ export const CHART_REGISTRY: ChartTypeDefinition[] = [
     requiresHierarchical: true,
     requiresRelational: false,
     requiresOHLC: false,
-    implemented: false,
-    blockedReason: "Needs interactive-expansion state management plus a hierarchy layout; the deterministic decomposition-path logic itself isn't built. Not built.",
+    implemented: true,
   },
 
   // ---- Geospatial ----
@@ -797,7 +792,7 @@ export const CHART_REGISTRY: ChartTypeDefinition[] = [
     subcategory: "mapping",
     description: "Geographic regions filled by color according to a quantitative value.",
     renderer: "map",
-    requiredEncodings: ["color"],
+    requiredEncodings: ["x", "color"],
     optionalEncodings: [],
     supportedFieldTypes: ["geographic", "numeric"],
     minDataPoints: 1,
@@ -808,8 +803,7 @@ export const CHART_REGISTRY: ChartTypeDefinition[] = [
     requiresHierarchical: false,
     requiresRelational: false,
     requiresOHLC: false,
-    implemented: false,
-    blockedReason: "Needs region-boundary geometry (topojson) and a map projection library -- no geo-mapping dependency is installed. Not built.",
+    implemented: true,
   },
   {
     id: "bubble_map",
@@ -818,7 +812,7 @@ export const CHART_REGISTRY: ChartTypeDefinition[] = [
     subcategory: "mapping",
     description: "Proportional bubbles at latitude/longitude coordinates.",
     renderer: "map",
-    requiredEncodings: ["size"],
+    requiredEncodings: ["x", "y", "size"],
     optionalEncodings: ["color"],
     supportedFieldTypes: ["geographic", "numeric"],
     minDataPoints: 1,
@@ -829,8 +823,7 @@ export const CHART_REGISTRY: ChartTypeDefinition[] = [
     requiresHierarchical: false,
     requiresRelational: false,
     requiresOHLC: false,
-    implemented: false,
-    blockedReason: "Same map-base-layer dependency gap as choropleth. Not built.",
+    implemented: true,
   },
   {
     id: "flow_map",
@@ -839,7 +832,7 @@ export const CHART_REGISTRY: ChartTypeDefinition[] = [
     subcategory: "mapping",
     description: "Directional, weighted lines between origin/destination geographic coordinates.",
     renderer: "map",
-    requiredEncodings: ["detail", "size"],
+    requiredEncodings: ["x", "y", "x2", "y2", "size"],
     optionalEncodings: [],
     supportedFieldTypes: ["geographic", "numeric"],
     minDataPoints: 1,
@@ -850,8 +843,7 @@ export const CHART_REGISTRY: ChartTypeDefinition[] = [
     requiresHierarchical: false,
     requiresRelational: true,
     requiresOHLC: false,
-    implemented: false,
-    blockedReason: "Same map-base-layer dependency gap as choropleth, plus great-circle path geometry. Not built.",
+    implemented: true,
   },
 
   // ---- Single metrics ----
@@ -893,8 +885,7 @@ export const CHART_REGISTRY: ChartTypeDefinition[] = [
     requiresHierarchical: false,
     requiresRelational: false,
     requiresOHLC: false,
-    implemented: false,
-    blockedReason: "Needs a D3 arc component with threshold-band geometry, plus a min/max/target encoding VisualizationSpec doesn't have yet. Not built.",
+    implemented: true,
   },
 
   // ---- Raw data ----
@@ -936,8 +927,7 @@ export const CHART_REGISTRY: ChartTypeDefinition[] = [
     requiresHierarchical: false,
     requiresRelational: false,
     requiresOHLC: false,
-    implemented: false,
-    blockedReason: "Needs pivot/cross-tab computation (row x column aggregation) plus subtotal logic that doesn't exist in the transform layer yet. Distinct from the heatmap (which is display-only, no pivoting). Not built.",
+    implemented: true,
   },
 ];
 

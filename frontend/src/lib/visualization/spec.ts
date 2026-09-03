@@ -23,6 +23,21 @@ export interface Encodings {
   color?: Encoding | null;
   size?: Encoding | null;
   detail?: Encoding | null;
+
+  /** End of an x-range. Required by Gantt (task start -> end); the bar spans x..x2. */
+  x2?: Encoding | null;
+  /** End of a y-range. Set automatically by the waterfall compiler. */
+  y2?: Encoding | null;
+
+  /** A second, independently-scaled measure -- line_column renders `y` as columns and this
+   * as an overlaid line on its own axis. */
+  measure2?: Encoding | null;
+
+  /** Open/high/low/close for candlestick and OHLC charts; all four required together. */
+  open?: Encoding | null;
+  high?: Encoding | null;
+  low?: Encoding | null;
+  close?: Encoding | null;
 }
 
 export type FilterOperator = "eq" | "neq" | "gt" | "gte" | "lt" | "lte" | "in" | "not_null";

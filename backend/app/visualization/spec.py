@@ -45,6 +45,25 @@ class Encodings(BaseModel):
     detail: Encoding | None = None
     """Extra grouping field with no visual channel of its own (e.g. facet key)."""
 
+    # --- Range / interval channels ---
+    x2: Encoding | None = None
+    """End of an x-range. Required by Gantt (task start -> end); the bar spans x..x2."""
+    y2: Encoding | None = None
+    """End of a y-range (e.g. an explicit band). Set automatically by the waterfall compiler."""
+
+    # --- Second measure (dual-axis combination charts) ---
+    measure2: Encoding | None = None
+    """A second, independently-scaled measure. Used by line_column: `y` renders as columns,
+    `measure2` as an overlaid line on its own axis."""
+
+    # --- Financial OHLC channels ---
+    open: Encoding | None = None
+    high: Encoding | None = None
+    low: Encoding | None = None
+    close: Encoding | None = None
+    """Open/high/low/close for candlestick and OHLC charts. All four are required together;
+    `x` carries the period. Validated as a set, never partially."""
+
 
 class FilterOperator(StrEnum):
     EQ = "eq"
