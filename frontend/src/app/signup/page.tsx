@@ -34,7 +34,7 @@ export default function SignupPage() {
         <Card>
           <CardHeader>
             <CardTitle>Create an account</CardTitle>
-            <Subtitle className="text-sm">Start turning data into stories.</Subtitle>
+            <Subtitle className="text-sm">Start visualizing your data.</Subtitle>
           </CardHeader>
           <CardContent>
             <form
@@ -44,21 +44,33 @@ export default function SignupPage() {
                 mutation.mutate({ email, password, organization_name: organizationName });
               }}
             >
+              <label htmlFor="signup-org" className="sr-only">
+                Organization name
+              </label>
               <Input
+                id="signup-org"
                 type="text"
                 placeholder="Organization name"
                 value={organizationName}
                 onChange={(e) => setOrganizationName(e.target.value)}
                 required
               />
+              <label htmlFor="signup-email" className="sr-only">
+                Email
+              </label>
               <Input
+                id="signup-email"
                 type="email"
                 placeholder="Email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 required
               />
+              <label htmlFor="signup-password" className="sr-only">
+                Password
+              </label>
               <Input
+                id="signup-password"
                 type="password"
                 placeholder="Password (min 8 characters)"
                 minLength={8}

@@ -1,6 +1,8 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { AnimatePresence, motion } from "framer-motion";
+import { CheckCircle2, ChevronDown, Download } from "lucide-react";
 import { useParams } from "next/navigation";
 import { useRef, useState } from "react";
 import type { View } from "vega";
@@ -47,6 +49,9 @@ export default function StudioPage() {
   const viewRef = useRef<View | null>(null);
   const [viewReady, setViewReady] = useState(false);
   const [exportError, setExportError] = useState<string | null>(null);
+  const [exportSuccess, setExportSuccess] = useState<string | null>(null);
+  const [inspectorOpen, setInspectorOpen] = useState(false);
+  const [hoveredTheme, setHoveredTheme] = useState<ThemeTokens | undefined>(undefined);
   const [annotationDraft, setAnnotationDraft] = useState<{
     type: AnnotationType;
     text: string;
@@ -91,7 +96,8 @@ export default function StudioPage() {
   const currentVersion = versionsQuery.data?.at(-1);
   const themes = themesQuery.data ? [...themesQuery.data.top, ...themesQuery.data.rest] : [];
   const persistedTheme = themes.find((t) => t.name === currentVersion?.spec.theme);
-  const activeTheme = selectedTheme ?? persistedTheme ?? themes[0];
+  const selectedThemeForDisplay = selectedTheme ?? persistedTheme ?? themes[0];
+  const activeTheme = hoveredTheme ?? selectedThemeForDisplay;
 
   const implementedChartTypes = CHART_REGISTRY.filter((c) => c.implemented);
   const columns = profileQuery.data?.columns ?? [];
@@ -133,15 +139,18 @@ export default function StudioPage() {
               disabled={!viewReady || !currentVersion}
               onClick={async () => {
                 setExportError(null);
+                setExportSuccess(null);
                 try {
                   if (!viewRef.current || !currentVersion) return;
                   const blob = await exportSvg(viewRef.current, "visualization.svg");
                   await createExport(currentVersion.id, "svg", blob, "visualization.svg");
+                  setExportSuccess("Exported visualization.svg");
                 } catch (err) {
                   setExportError(err instanceof Error ? err.message : "SVG export failed.");
                 }
               }}
             >
+              <Download aria-hidden className="mr-1.5 h-4 w-4" />
               Export SVG
             </Button>
             <Button
@@ -150,15 +159,18 @@ export default function StudioPage() {
               disabled={!viewReady || !currentVersion}
               onClick={async () => {
                 setExportError(null);
+                setExportSuccess(null);
                 try {
                   if (!viewRef.current || !currentVersion) return;
                   const blob = await exportPng(viewRef.current, "visualization.png");
                   await createExport(currentVersion.id, "png", blob, "visualization.png");
+                  setExportSuccess("Exported visualization.png");
                 } catch (err) {
                   setExportError(err instanceof Error ? err.message : "PNG export failed.");
                 }
               }}
             >
+              <Download aria-hidden className="mr-1.5 h-4 w-4" />
               Export PNG
             </Button>
           </div>
@@ -168,14 +180,41 @@ export default function StudioPage() {
             {exportError}
           </p>
         )}
+        <AnimatePresence>
+          {exportSuccess && (
+            <motion.p
+              initial={{ opacity: 0, y: -4 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0 }}
+              role="status"
+              aria-live="polite"
+              onAnimationComplete={() => {
+                setTimeout(() => setExportSuccess(null), 2500);
+              }}
+              className="flex items-center gap-1.5 text-sm text-positive"
+            >
+              <CheckCircle2 aria-hidden className="h-4 w-4" />
+              {exportSuccess}
+            </motion.p>
+          )}
+        </AnimatePresence>
 
         <div className="grid grid-cols-1 gap-8 lg:grid-cols-[1fr_260px]">
-          <div className="rounded-[var(--radius-token)] border border-border p-6">
+          <div className="overflow-hidden rounded-[var(--radius-token)] border border-border bg-surface shadow-md">
+            <div className="flex items-center justify-between border-b border-border bg-surface-muted px-4 py-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+              Preview
+            </div>
+            <div className="p-6">
             {(!currentVersion || rowsQuery.isLoading) && (
               <ProcessingState label="Loading visualization…" />
             )}
             {currentVersion && rowsQuery.data && (
-              <>
+              <motion.div
+                key={currentVersion.id}
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                transition={{ duration: 0.25 }}
+              >
                 <VisualizationRenderer
                   spec={currentVersion.spec}
                   rows={rowsQuery.data.rows}
@@ -186,37 +225,69 @@ export default function StudioPage() {
                   }}
                 />
                 <AnnotationList annotations={textAnnotations(currentVersion.spec)} />
-              </>
+              </motion.div>
             )}
+            </div>
           </div>
 
-          <div className="flex flex-col gap-6">
+          <div className="flex flex-col gap-4">
+            <button
+              type="button"
+              aria-expanded={inspectorOpen}
+              aria-controls="studio-inspector"
+              onClick={() => setInspectorOpen((v) => !v)}
+              className="flex items-center justify-between rounded-[var(--radius-token)] border border-border-strong px-3 py-2 text-sm font-medium lg:hidden"
+            >
+              Chart settings
+              <ChevronDown
+                aria-hidden
+                className={cn("h-4 w-4 transition-transform", inspectorOpen && "rotate-180")}
+              />
+            </button>
+
+            <div
+              id="studio-inspector"
+              className={cn("flex-col gap-6", inspectorOpen ? "flex" : "hidden", "lg:flex")}
+            >
             <div>
               <SectionHeading as="h2" className="mb-3 text-sm uppercase tracking-wide">
                 Chart type
               </SectionHeading>
               <div className="flex flex-col gap-1">
-                {implementedChartTypes.map((chart) => (
-                  <button
-                    key={chart.id}
-                    type="button"
-                    disabled={applyMutation.isPending}
-                    onClick={() =>
-                      applyMutation.mutate({
-                        type: "change_chart_type",
-                        params: { chart_type: chart.id },
-                      })
-                    }
-                    className={cn(
-                      "rounded-[var(--radius-token)] border px-3 py-1.5 text-left text-sm",
-                      currentVersion?.spec.chart_type === chart.id
-                        ? "border-foreground font-medium"
-                        : "border-transparent text-muted-foreground hover:border-border-strong"
-                    )}
-                  >
-                    {chart.label}
-                  </button>
-                ))}
+                {implementedChartTypes.map((chart) => {
+                  const isActive = currentVersion?.spec.chart_type === chart.id;
+                  return (
+                    <motion.button
+                      key={chart.id}
+                      type="button"
+                      whileHover={{ x: 2 }}
+                      whileTap={{ scale: 0.98 }}
+                      transition={{ duration: 0.12 }}
+                      disabled={applyMutation.isPending}
+                      onClick={() =>
+                        applyMutation.mutate({
+                          type: "change_chart_type",
+                          params: { chart_type: chart.id },
+                        })
+                      }
+                      className={cn(
+                        "relative rounded-[var(--radius-token)] border px-3 py-1.5 text-left text-sm",
+                        isActive
+                          ? "border-foreground font-medium"
+                          : "border-transparent text-muted-foreground hover:border-border-strong"
+                      )}
+                    >
+                      {isActive && (
+                        <motion.span
+                          layoutId="chart-type-active"
+                          className="absolute inset-0 -z-10 rounded-[var(--radius-token)] bg-surface-muted"
+                          transition={{ type: "spring", stiffness: 400, damping: 30 }}
+                        />
+                      )}
+                      {chart.label}
+                    </motion.button>
+                  );
+                })}
               </div>
             </div>
 
@@ -224,25 +295,41 @@ export default function StudioPage() {
               <SectionHeading as="h2" className="mb-3 text-sm uppercase tracking-wide">
                 Theme
               </SectionHeading>
-              <div className="flex flex-wrap gap-2">
+              <div className="flex flex-wrap gap-1">
                 {themes.map((theme) => (
-                  <button
+                  <motion.button
                     key={theme.name}
                     type="button"
+                    whileTap={{ scale: 0.9 }}
+                    transition={{ duration: 0.12 }}
+                    onMouseEnter={() => setHoveredTheme(theme)}
+                    onMouseLeave={() => setHoveredTheme(undefined)}
+                    onFocus={() => setHoveredTheme(theme)}
+                    onBlur={() => setHoveredTheme(undefined)}
                     onClick={() => {
                       setSelectedTheme(theme);
+                      setHoveredTheme(undefined);
                       applyMutation.mutate({
                         type: "change_theme",
                         params: { theme: theme.name },
                       });
                     }}
-                    className={cn(
-                      "h-6 w-6 rounded-full border",
-                      activeTheme?.name === theme.name ? "border-foreground" : "border-border-strong"
-                    )}
-                    style={{ backgroundColor: theme.categorical_colors[0] }}
                     title={theme.name.replace(/_/g, " ")}
-                  />
+                    aria-label={`Apply ${theme.name.replace(/_/g, " ")} theme`}
+                    aria-pressed={selectedThemeForDisplay?.name === theme.name}
+                    className="flex h-10 w-10 items-center justify-center"
+                  >
+                    <motion.span
+                      whileHover={{ scale: 1.15 }}
+                      className={cn(
+                        "block h-6 w-6 rounded-full border-2",
+                        selectedThemeForDisplay?.name === theme.name
+                          ? "border-foreground"
+                          : "border-border-strong"
+                      )}
+                      style={{ backgroundColor: theme.categorical_colors[0] }}
+                    />
+                  </motion.button>
                 ))}
               </div>
             </div>
@@ -288,6 +375,7 @@ export default function StudioPage() {
                       </select>
                       {current && (
                         <select
+                          aria-label={`Aggregation for ${channel}`}
                           className="rounded-[var(--radius-token)] border border-border-strong bg-surface px-2 py-1 text-xs text-muted-foreground"
                           value={current.aggregation ?? "none"}
                           disabled={applyMutation.isPending}
@@ -316,30 +404,38 @@ export default function StudioPage() {
                 Annotations
               </SectionHeading>
               <div className="flex flex-col gap-2">
-                {currentVersion?.spec.annotations.map((a) => (
-                  <div
-                    key={a.id}
-                    className="flex items-center justify-between gap-2 rounded-[var(--radius-token)] border border-border p-2 text-xs"
-                  >
-                    <span className="truncate">
-                      <span className="font-medium">{a.type.replace(/_/g, " ")}:</span> {a.text}
-                    </span>
-                    <button
-                      type="button"
-                      className="shrink-0 text-muted-foreground hover:text-negative"
-                      onClick={() =>
-                        applyMutation.mutate({
-                          type: "remove_annotation",
-                          params: { id: a.id },
-                        })
-                      }
+                <AnimatePresence initial={false}>
+                  {currentVersion?.spec.annotations.map((a) => (
+                    <motion.div
+                      key={a.id}
+                      initial={{ opacity: 0, height: 0 }}
+                      animate={{ opacity: 1, height: "auto" }}
+                      exit={{ opacity: 0, height: 0 }}
+                      transition={{ duration: 0.2 }}
+                      className="flex items-center justify-between gap-2 overflow-hidden rounded-[var(--radius-token)] border border-border p-2 text-xs"
                     >
-                      Remove
-                    </button>
-                  </div>
-                ))}
+                      <span className="truncate">
+                        <span className="font-medium">{a.type.replace(/_/g, " ")}:</span> {a.text}
+                      </span>
+                      <button
+                        type="button"
+                        aria-label={`Remove ${a.type.replace(/_/g, " ")} annotation: ${a.text}`}
+                        className="shrink-0 text-muted-foreground hover:text-negative"
+                        onClick={() =>
+                          applyMutation.mutate({
+                            type: "remove_annotation",
+                            params: { id: a.id },
+                          })
+                        }
+                      >
+                        Remove
+                      </button>
+                    </motion.div>
+                  ))}
+                </AnimatePresence>
 
                 <select
+                  aria-label="New annotation type"
                   className="rounded-[var(--radius-token)] border border-border-strong bg-surface px-2 py-1 text-xs"
                   value={annotationDraft.type}
                   onChange={(e) =>
@@ -353,6 +449,7 @@ export default function StudioPage() {
                   ))}
                 </select>
                 <input
+                  aria-label="New annotation text"
                   className="rounded-[var(--radius-token)] border border-border-strong bg-surface px-2 py-1 text-xs"
                   placeholder="Text"
                   value={annotationDraft.text}
@@ -361,6 +458,7 @@ export default function StudioPage() {
                 {annotationDraft.type === "reference_line" && (
                   <>
                     <select
+                      aria-label="Reference line target field"
                       className="rounded-[var(--radius-token)] border border-border-strong bg-surface px-2 py-1 text-xs"
                       value={annotationDraft.targetField}
                       onChange={(e) =>
@@ -380,6 +478,7 @@ export default function StudioPage() {
                       )}
                     </select>
                     <input
+                      aria-label="Reference line target value"
                       className="rounded-[var(--radius-token)] border border-border-strong bg-surface px-2 py-1 text-xs"
                       placeholder="Target value"
                       value={annotationDraft.targetValue}
@@ -428,6 +527,7 @@ export default function StudioPage() {
                   : "Couldn't apply that change."}
               </p>
             )}
+            </div>
           </div>
         </div>
       </section>

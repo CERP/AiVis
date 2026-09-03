@@ -1,16 +1,24 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { motion } from "framer-motion";
+import { Sparkles } from "lucide-react";
 import { useParams, useRouter } from "next/navigation";
 import { useState } from "react";
 
 import { AppShell } from "@/components/layout/app-shell";
 import { Button } from "@/components/ui/button";
 import { RecommendationCard } from "@/components/recommendations/recommendation-card";
-import { EmptyState, ErrorState, ProcessingState, StagedProcessing } from "@/components/ui/states";
-import { Headline, SectionHeading, Subtitle } from "@/components/ui/typography";
+import {
+  EmptyState,
+  ErrorState,
+  ProcessingState,
+  StagedProcessing,
+  StatTile,
+} from "@/components/ui/states";
+import { Headline, SectionHeading } from "@/components/ui/typography";
 import { ApiError } from "@/lib/api/client";
-import { getDataset } from "@/lib/api/datasets";
+import { getDataset, getDatasetRows } from "@/lib/api/datasets";
 import { applyCleaning } from "@/lib/api/cleaning";
 import {
   analyzeInsights,
@@ -49,6 +57,12 @@ export default function DatasetDetailPage() {
   const recommendationsQuery = useQuery({
     queryKey: ["recommendations", datasetId],
     queryFn: () => getRecommendations(datasetId),
+    enabled: hasBeenAnalyzed,
+  });
+
+  const rowsQuery = useQuery({
+    queryKey: ["dataset-rows-preview", datasetId],
+    queryFn: () => getDatasetRows(datasetId, 100),
     enabled: hasBeenAnalyzed,
   });
 
@@ -102,15 +116,26 @@ export default function DatasetDetailPage() {
           <Headline as="h1" className="text-3xl">
             Dataset overview
           </Headline>
-          {profileQuery.data && (
-            <Subtitle className="mt-2">
-              {profileQuery.data.row_count.toLocaleString()} rows ·{" "}
-              {profileQuery.data.column_count} columns
-            </Subtitle>
-          )}
         </div>
 
         {profileQuery.isLoading && <ProcessingState label="Loading profile…" />}
+
+        {profileQuery.data && (
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+            <StatTile label="Rows" value={profileQuery.data.row_count.toLocaleString()} index={0} />
+            <StatTile label="Columns" value={profileQuery.data.column_count} index={1} />
+            <StatTile
+              label="Insights"
+              value={insightsQuery.data?.length ?? 0}
+              index={2}
+            />
+            <StatTile
+              label="Cleanup suggestions"
+              value={suggestions.length}
+              index={3}
+            />
+          </div>
+        )}
         {profileQuery.isError && (
           <ErrorState
             description={
@@ -124,14 +149,18 @@ export default function DatasetDetailPage() {
         {profileQuery.data && (
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
             {profileQuery.data.columns.map((col) => (
-              <div key={col.id} className="rounded-[var(--radius-token)] border border-border p-4">
+              <motion.div
+                key={col.id}
+                whileHover={{ y: -2 }}
+                className="rounded-[var(--radius-token)] border border-border bg-surface p-4 shadow-sm transition-shadow hover:shadow-md"
+              >
                 <p className="font-medium">{col.name}</p>
                 <p className="text-xs text-muted-foreground">
                   {col.semantic_type ?? col.raw_type} · {col.null_count} nulls ·{" "}
                   {col.unique_count} unique
                   {col.is_pii ? " · PII" : ""}
                 </p>
-              </div>
+              </motion.div>
             ))}
           </div>
         )}
@@ -143,9 +172,10 @@ export default function DatasetDetailPage() {
             </SectionHeading>
             <div className="flex flex-col gap-2">
               {suggestions.map((s) => (
-                <div
+                <motion.div
                   key={`${s.columnName}-${s.operationType}`}
-                  className="flex items-center justify-between gap-4 rounded-[var(--radius-token)] border border-border p-3"
+                  whileHover={{ x: 2 }}
+                  className="flex items-center justify-between gap-4 rounded-[var(--radius-token)] border border-border bg-surface p-3 shadow-sm transition-shadow hover:shadow-md"
                 >
                   <div>
                     <p className="text-sm font-medium">{s.label}</p>
@@ -154,6 +184,7 @@ export default function DatasetDetailPage() {
                   <Button
                     size="sm"
                     variant="outline"
+                    aria-label={`Apply suggestion: ${s.label}`}
                     disabled={cleaningMutation.isPending}
                     onClick={() =>
                       cleaningMutation.mutate({
@@ -164,7 +195,7 @@ export default function DatasetDetailPage() {
                   >
                     Apply
                   </Button>
-                </div>
+                </motion.div>
               ))}
             </div>
             {cleaningMutation.isSuccess && (
@@ -193,6 +224,7 @@ export default function DatasetDetailPage() {
                 onClick={() => runAnalysis.mutate()}
                 disabled={!profileQuery.data}
               >
+                <Sparkles aria-hidden className="mr-1.5 h-4 w-4" />
                 Discover insights
               </Button>
             )}
@@ -224,6 +256,7 @@ export default function DatasetDetailPage() {
                     key={rec.story_id}
                     recommendation={rec}
                     index={index}
+                    previewRows={rowsQuery.data?.rows}
                     onOpenStudio={(r) => openInStudio.mutate(r)}
                     isOpeningStudio={openInStudio.isPending}
                   />
@@ -242,6 +275,7 @@ export default function DatasetDetailPage() {
                       key={rec.story_id}
                       recommendation={rec}
                       index={index}
+                      previewRows={rowsQuery.data?.rows}
                       onOpenStudio={(r) => openInStudio.mutate(r)}
                       isOpeningStudio={openInStudio.isPending}
                     />

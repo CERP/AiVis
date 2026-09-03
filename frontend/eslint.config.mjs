@@ -1,10 +1,17 @@
 import { defineConfig, globalIgnores } from "eslint/config";
 import nextVitals from "eslint-config-next/core-web-vitals";
 import nextTs from "eslint-config-next/typescript";
+import jsxA11y from "eslint-plugin-jsx-a11y";
 
 const eslintConfig = defineConfig([
   ...nextVitals,
   ...nextTs,
+  {
+    // eslint-config-next already registers the jsx-a11y plugin (via next/core-web-vitals);
+    // only add the recommended rule set here, not flatConfigs.recommended (which would try to
+    // redefine the plugin registration and error).
+    rules: jsxA11y.flatConfigs.recommended.rules,
+  },
   // Override default ignores of eslint-config-next.
   globalIgnores([
     // Default ignores of eslint-config-next:

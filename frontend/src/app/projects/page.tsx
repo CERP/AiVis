@@ -54,7 +54,11 @@ export default function ProjectsPage() {
                 if (newProjectName.trim()) createProject.mutate(newProjectName.trim());
               }}
             >
+              <label htmlFor="project-name" className="sr-only">
+                Project name
+              </label>
               <Input
+                id="project-name"
                 placeholder="Project name"
                 value={newProjectName}
                 onChange={(e) => setNewProjectName(e.target.value)}
@@ -80,7 +84,7 @@ export default function ProjectsPage() {
               <li key={project.id}>
                 <Link
                   href={`/projects/${project.id}`}
-                  className="block rounded-[var(--radius-token)] border border-border p-4 hover:bg-surface-muted"
+                  className="block rounded-[var(--radius-token)] border border-border bg-surface p-4 shadow-sm transition-shadow hover:bg-surface-muted hover:shadow-md"
                 >
                   {project.name}
                 </Link>

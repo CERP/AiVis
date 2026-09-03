@@ -5,6 +5,7 @@ import { motion } from "framer-motion";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { ChartLabel, SectionHeading } from "@/components/ui/typography";
+import { VisualizationRenderer } from "@/components/visualization/visualization-renderer";
 import { getChartDefinition } from "@/lib/visualization/registry";
 import type { VisualizationRecommendation } from "@/lib/api/types";
 import { cn } from "@/lib/utils";
@@ -12,6 +13,7 @@ import { cn } from "@/lib/utils";
 interface RecommendationCardProps {
   recommendation: VisualizationRecommendation;
   index: number;
+  previewRows?: Record<string, unknown>[];
   onOpenStudio?: (recommendation: VisualizationRecommendation) => void;
   isOpeningStudio?: boolean;
 }
@@ -30,6 +32,7 @@ const CHART_TYPE_GLYPH: Record<string, string> = {
 export function RecommendationCard({
   recommendation,
   index,
+  previewRows,
   onOpenStudio,
   isOpeningStudio,
 }: RecommendationCardProps) {
@@ -44,12 +47,25 @@ export function RecommendationCard({
       transition={{ duration: 0.35, delay: index * 0.06, ease: "easeOut" }}
     >
       <Card className="flex h-full flex-col overflow-hidden transition-shadow hover:shadow-md">
-        <div
-          aria-hidden
-          className="flex h-28 items-center justify-center bg-surface-muted font-mono text-3xl tracking-widest text-muted-foreground"
-        >
-          {CHART_TYPE_GLYPH[recommendation.spec.chart_type] ?? "▭"}
-        </div>
+        {previewRows && previewRows.length > 0 ? (
+          <div className="flex h-28 items-center justify-center overflow-hidden bg-surface-muted p-2">
+            <VisualizationRenderer
+              spec={{
+                ...recommendation.spec,
+                layout: { ...recommendation.spec.layout, height: 96, show_legend: false },
+              }}
+              rows={previewRows}
+              className="pointer-events-none h-full"
+            />
+          </div>
+        ) : (
+          <div
+            aria-hidden
+            className="flex h-28 items-center justify-center bg-surface-muted font-mono text-3xl tracking-widest text-muted-foreground"
+          >
+            {CHART_TYPE_GLYPH[recommendation.spec.chart_type] ?? "▭"}
+          </div>
+        )}
         <CardHeader className="gap-2">
           <div className="flex items-start justify-between gap-3">
             <SectionHeading as="h3" className="text-lg">
