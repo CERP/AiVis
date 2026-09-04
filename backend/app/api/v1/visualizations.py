@@ -3,6 +3,8 @@ import uuid
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlmodel.ext.asyncio.session import AsyncSession
 
+from app.ai.base import AIProviderError
+from app.ai.factory import get_ai_provider
 from app.api.deps import get_current_organization_id
 from app.core.db import get_session
 from app.models.visualization import Visualization
@@ -12,14 +14,17 @@ from app.repositories.visualization import VisualizationRepository, Visualizatio
 from app.schemas.visualization import (
     ApplyCommandRequest,
     CreateVisualizationRequest,
+    NLEditRequest,
     VisualizationResponse,
     VisualizationVersionResponse,
 )
 from app.services.visualization import (
     VisualizationValidationError,
     apply_command_to_visualization,
+    apply_nl_edit_to_visualization,
     create_visualization,
 )
+from app.visualization.commands import CommandError
 
 router = APIRouter(prefix="/visualizations", tags=["visualizations"])
 
@@ -110,6 +115,37 @@ async def apply_command_route(
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail="; ".join(exc.result.errors)
         ) from exc
+    except CommandError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=exc.message
+        ) from exc
+
+    return new_version
+
+
+@router.post("/{visualization_id}/nl-edit", response_model=VisualizationVersionResponse)
+async def nl_edit_route(
+    visualization_id: uuid.UUID,
+    payload: NLEditRequest,
+    organization_id: uuid.UUID = Depends(get_current_organization_id),
+    session: AsyncSession = Depends(get_session),
+) -> VisualizationVersionResponse:
+    """Natural-language studio edit: Gemini translates `payload.query` into one structured
+    command against the visualization's current spec, applied through the same deterministic,
+    validated path a manual studio control uses -- see app/services/nl_studio_edit.py."""
+    visualization = await _get_owned_visualization(visualization_id, organization_id, session)
+    try:
+        provider = get_ai_provider()
+        new_version = await apply_nl_edit_to_visualization(
+            session, visualization=visualization, provider=provider, query=payload.query
+        )
+    except AIProviderError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY, detail=f"AI edit failed: {exc}"
+        ) from exc
+    except (VisualizationValidationError, CommandError) as exc:
+        detail = "; ".join(exc.result.errors) if isinstance(exc, VisualizationValidationError) else exc.message
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=detail) from exc
 
     return new_version
 

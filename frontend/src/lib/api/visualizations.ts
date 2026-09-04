@@ -29,6 +29,7 @@ export interface VisualizationCommand {
     | "add_annotation"
     | "remove_annotation"
     | "filter_data"
+    | "remove_filter"
     | "change_sort"
     | "change_layout";
   params: Record<string, unknown>;

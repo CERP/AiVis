@@ -24,6 +24,7 @@ class CommandType(StrEnum):
     ADD_ANNOTATION = "add_annotation"
     REMOVE_ANNOTATION = "remove_annotation"
     FILTER_DATA = "filter_data"
+    REMOVE_FILTER = "remove_filter"
     CHANGE_SORT = "change_sort"
     CHANGE_LAYOUT = "change_layout"
 
@@ -97,6 +98,10 @@ def apply_command(spec: VisualizationSpec, command: VisualizationCommand) -> Vis
 
     elif command.type == CommandType.FILTER_DATA:
         updated.filters = [*updated.filters, Filter.model_validate(command.params)]
+
+    elif command.type == CommandType.REMOVE_FILTER:
+        filter_id = command.params.get("id")
+        updated.filters = [f for f in updated.filters if f.id != filter_id]
 
     else:
         raise CommandError(f"Unsupported command type: {command.type}")

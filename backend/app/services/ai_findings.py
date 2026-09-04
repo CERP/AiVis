@@ -27,10 +27,9 @@ _SYSTEM_INSTRUCTION = (
     # --- Input contract ---
     "INPUT\n"
     "You receive a single JSON object describing one dataset. It may contain:\n"
-    "- schema: field names, inferred data types, and (where available) cardinality, "
-    "unit or format hints, and sample category labels\n"
-    "- aggregate statistics: counts, null counts, distinct counts, min/max, mean, median, "
-    "quantiles, standard deviation, top categories and their frequencies\n"
+    "- schema: field names, inferred data types, cardinality, null percentage, and up to 3 "
+    "representative sample values per field (top categories for categorical/text fields, "
+    "min/median/max for numeric fields, min/max for dates)\n"
     "- data-quality findings: missingness, duplicates, constant or near-constant fields, "
     "outliers, type inconsistencies, suspicious encodings of missing values\n"
     "- relationships already detected by earlier stages of the pipeline\n"

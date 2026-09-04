@@ -22,13 +22,18 @@ from app.repositories.dataset import (
 from app.repositories.insight import InsightRepository, StoryRepository
 from app.repositories.project import ProjectRepository
 from app.schemas.analysis import AnalysisResponse
-from app.schemas.cleaning import CleaningRequest, CleaningResponse
+from app.schemas.cleaning import (
+    CleaningPreviewResponse,
+    CleaningRequest,
+    CleaningResponse,
+    SampleDiffEntryResponse,
+)
 from app.schemas.dataset import DatasetResponse
 from app.schemas.insight import InsightResponse
 from app.schemas.profile import ColumnProfileResponse, DatasetProfileResponse
 from app.schemas.rows import DatasetRowsResponse
 from app.schemas.story import StoryResponse
-from app.services.cleaning import CleaningError, apply_cleaning_operation
+from app.services.cleaning import CleaningError, apply_cleaning_operation, preview_cleaning_operation
 from app.services.ingestion import ingest_dataset
 from app.services.storage import get_storage_service
 
@@ -234,6 +239,54 @@ async def clean_dataset(
         column_count=new_version.column_count,
         valid_count=operation.valid_count,
         invalid_count=operation.invalid_count,
+    )
+
+
+@router.post("/{dataset_id}/clean/preview", response_model=CleaningPreviewResponse)
+async def preview_clean_dataset(
+    dataset_id: uuid.UUID,
+    payload: CleaningRequest,
+    organization_id: uuid.UUID = Depends(get_current_organization_id),
+    session: AsyncSession = Depends(get_session),
+) -> CleaningPreviewResponse:
+    """Before/after diff for a proposed cleaning operation -- computed on a copy of the current
+    version's data, nothing written, no new DatasetVersion created. The original and every
+    prior version stay exactly as they are; see preview_cleaning_operation() for why the
+    result is guaranteed identical to what POST /clean would actually persist."""
+    dataset = await DatasetRepository(session).get(dataset_id)
+    if dataset is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Dataset not found")
+    await _require_project(dataset.project_id, organization_id, session)
+
+    if dataset.status != DatasetStatus.READY:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"Dataset is not ready (status={dataset.status})",
+        )
+
+    source_version = await DatasetVersionRepository(session).get_latest(dataset_id)
+    if source_version is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No dataset version")
+
+    try:
+        result = await preview_cleaning_operation(
+            source_version=source_version,
+            operation_type=payload.operation_type,
+            column_name=payload.column_name,
+            params=payload.params,
+        )
+    except CleaningError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=exc.message
+        ) from exc
+
+    return CleaningPreviewResponse(
+        column=result.column,
+        sample_diff=[
+            SampleDiffEntryResponse(row_index=d.row_index, before=d.before, after=d.after)
+            for d in result.sample_diff
+        ],
+        affected_rows_count=result.affected_rows_count,
     )
 
 

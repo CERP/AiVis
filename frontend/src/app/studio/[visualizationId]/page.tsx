@@ -10,6 +10,7 @@ import type { View } from "vega";
 import { AppShell } from "@/components/layout/app-shell";
 import { AnnotationList } from "@/components/visualization/annotation-list";
 import { Button } from "@/components/ui/button";
+import { FilterToolbar } from "@/components/visualization/filter-toolbar";
 import { VisualizationRenderer } from "@/components/visualization/visualization-renderer";
 import { ErrorState, ProcessingState } from "@/components/ui/states";
 import { Headline, SectionHeading, Subtitle } from "@/components/ui/typography";
@@ -24,14 +25,24 @@ import {
   listVersions,
   type VisualizationCommand,
 } from "@/lib/api/visualizations";
-import { CHART_REGISTRY } from "@/lib/visualization/registry";
+import { CHART_REGISTRY, getChartDefinition, type EncodingChannel } from "@/lib/visualization/registry";
 import { exportPng, exportSvg } from "@/lib/visualization/export";
 import { encodingTypeForColumn } from "@/lib/visualization/encoding-helpers";
 import { textAnnotations } from "@/lib/visualization/to-vega-lite";
 import type { AnnotationType } from "@/lib/visualization/spec";
 import { cn } from "@/lib/utils";
 
-const CHANNELS = ["x", "y", "color"] as const;
+// The only channels the CHANGE_FIELD/CHANGE_AGGREGATION commands accept
+// (backend/app/visualization/commands.py); other registry channels (x2, measure2, OHLC, ...)
+// are set by chart-type-specific Vega builders, not manual mapping.
+const MAPPABLE_CHANNELS = ["x", "y", "color", "size", "detail"] as const;
+const CHANNEL_LABELS: Record<(typeof MAPPABLE_CHANNELS)[number], string> = {
+  x: "X-Axis",
+  y: "Y-Axis",
+  color: "Color / Legend",
+  size: "Size",
+  detail: "Detail (tooltip)",
+};
 const AGGREGATIONS = ["none", "sum", "mean", "median", "count", "min", "max"] as const;
 const ANNOTATION_TYPES: AnnotationType[] = [
   "reference_line",
@@ -40,6 +51,13 @@ const ANNOTATION_TYPES: AnnotationType[] = [
   "highlighted_region",
   "source_note",
 ];
+const ANNOTATION_DESCRIPTIONS: Record<AnnotationType, string> = {
+  reference_line: "Marks a fixed threshold or target value for comparison.",
+  callout: "Draws attention to a specific point on the chart, e.g. a peak or anomaly.",
+  label: "A plain text label attached to the chart.",
+  highlighted_region: "Shades a range of the chart to draw attention to a span of values.",
+  source_note: "Attribution or methodology text shown below the chart.",
+};
 
 export default function StudioPage() {
   const params = useParams<{ visualizationId: string }>();
@@ -101,6 +119,18 @@ export default function StudioPage() {
 
   const implementedChartTypes = CHART_REGISTRY.filter((c) => c.implemented);
   const columns = profileQuery.data?.columns ?? [];
+
+  const activeChartDefinition = currentVersion
+    ? getChartDefinition(currentVersion.spec.chart_type)
+    : undefined;
+  const relevantChannels = activeChartDefinition
+    ? MAPPABLE_CHANNELS.filter((ch) =>
+        [...activeChartDefinition.requiredEncodings, ...activeChartDefinition.optionalEncodings].includes(
+          ch as EncodingChannel
+        )
+      )
+    : MAPPABLE_CHANNELS;
+  const mappingChannels = relevantChannels.length > 0 ? relevantChannels : MAPPABLE_CHANNELS;
 
   if (visualizationQuery.isError) {
     return (
@@ -204,6 +234,20 @@ export default function StudioPage() {
             <div className="flex items-center justify-between border-b border-border bg-surface-muted px-4 py-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
               Preview
             </div>
+            <FilterToolbar
+              filters={currentVersion?.spec.filters ?? []}
+              columns={columns}
+              disabled={applyMutation.isPending}
+              onAdd={(filter) =>
+                applyMutation.mutate({
+                  type: "filter_data",
+                  params: { id: crypto.randomUUID(), ...filter },
+                })
+              }
+              onRemove={(id) =>
+                applyMutation.mutate({ type: "remove_filter", params: { id } })
+              }
+            />
             <div className="p-6">
             {(!currentVersion || rowsQuery.isLoading) && (
               <ProcessingState label="Loading visualization…" />
@@ -322,13 +366,16 @@ export default function StudioPage() {
                     <motion.span
                       whileHover={{ scale: 1.15 }}
                       className={cn(
-                        "block h-6 w-6 rounded-full border-2",
+                        "grid h-6 w-6 grid-cols-2 grid-rows-2 overflow-hidden rounded-full border-2",
                         selectedThemeForDisplay?.name === theme.name
                           ? "border-foreground"
                           : "border-border-strong"
                       )}
-                      style={{ backgroundColor: theme.categorical_colors[0] }}
-                    />
+                    >
+                      {theme.categorical_colors.slice(0, 4).map((color, i) => (
+                        <span key={i} style={{ backgroundColor: color }} />
+                      ))}
+                    </motion.span>
                   </motion.button>
                 ))}
               </div>
@@ -339,40 +386,50 @@ export default function StudioPage() {
                 Data mapping
               </SectionHeading>
               <div className="flex flex-col gap-3">
-                {CHANNELS.map((channel) => {
+                {mappingChannels.map((channel) => {
                   const current = currentVersion?.spec.encoding[channel];
                   return (
                     <div key={channel} className="flex flex-col gap-1">
                       <label htmlFor={`channel-${channel}`} className="text-xs uppercase text-muted-foreground">
-                        {channel}
+                        {CHANNEL_LABELS[channel]}
                       </label>
-                      <select
-                        id={`channel-${channel}`}
-                        className="rounded-[var(--radius-token)] border border-border-strong bg-surface px-2 py-1 text-sm"
-                        value={current?.field ?? ""}
-                        disabled={applyMutation.isPending || columns.length === 0}
-                        onChange={(e) => {
-                          const field = e.target.value;
-                          if (!field) return;
-                          const column = columns.find((c) => c.name === field);
-                          if (!column) return;
-                          applyMutation.mutate({
-                            type: "change_field",
-                            params: {
-                              channel,
-                              field,
-                              encoding_type: encodingTypeForColumn(column),
-                            },
-                          });
-                        }}
-                      >
-                        <option value="">— none —</option>
-                        {columns.map((col) => (
-                          <option key={col.name} value={col.name}>
-                            {col.name}
-                          </option>
-                        ))}
-                      </select>
+                      <div className="flex items-center gap-1.5">
+                        {channel === "color" && current && (
+                          <span
+                            aria-hidden
+                            title="Uses the active theme's color palette"
+                            className="h-4 w-4 shrink-0 rounded-full border border-border-strong"
+                            style={{ backgroundColor: activeTheme?.categorical_colors[0] }}
+                          />
+                        )}
+                        <select
+                          id={`channel-${channel}`}
+                          className="w-full rounded-[var(--radius-token)] border border-border-strong bg-surface px-2 py-1 text-sm"
+                          value={current?.field ?? ""}
+                          disabled={applyMutation.isPending || columns.length === 0}
+                          onChange={(e) => {
+                            const field = e.target.value;
+                            if (!field) return;
+                            const column = columns.find((c) => c.name === field);
+                            if (!column) return;
+                            applyMutation.mutate({
+                              type: "change_field",
+                              params: {
+                                channel,
+                                field,
+                                encoding_type: encodingTypeForColumn(column),
+                              },
+                            });
+                          }}
+                        >
+                          <option value="">— none —</option>
+                          {columns.map((col) => (
+                            <option key={col.name} value={col.name}>
+                              {col.name} — {col.semantic_type ?? "unknown"}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
                       {current && (
                         <select
                           aria-label={`Aggregation for ${channel}`}
@@ -436,6 +493,7 @@ export default function StudioPage() {
 
                 <select
                   aria-label="New annotation type"
+                  title={ANNOTATION_DESCRIPTIONS[annotationDraft.type]}
                   className="rounded-[var(--radius-token)] border border-border-strong bg-surface px-2 py-1 text-xs"
                   value={annotationDraft.type}
                   onChange={(e) =>
@@ -443,11 +501,14 @@ export default function StudioPage() {
                   }
                 >
                   {ANNOTATION_TYPES.map((t) => (
-                    <option key={t} value={t}>
+                    <option key={t} value={t} title={ANNOTATION_DESCRIPTIONS[t]}>
                       {t.replace(/_/g, " ")}
                     </option>
                   ))}
                 </select>
+                <p className="text-[11px] leading-snug text-muted-foreground">
+                  {ANNOTATION_DESCRIPTIONS[annotationDraft.type]}
+                </p>
                 <input
                   aria-label="New annotation text"
                   className="rounded-[var(--radius-token)] border border-border-strong bg-surface px-2 py-1 text-xs"

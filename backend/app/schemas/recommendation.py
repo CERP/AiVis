@@ -13,4 +13,4 @@ class VisualizationRecommendationResponse(BaseModel):
 
 class RecommendationsResponse(BaseModel):
     top: list[VisualizationRecommendationResponse]
-    derived: list[VisualizationRecommendationResponse]
+    shortfall_reason: str | None = None

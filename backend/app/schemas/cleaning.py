@@ -18,3 +18,19 @@ class CleaningResponse(BaseModel):
     invalid_count: int
 
     model_config = {"from_attributes": True}
+
+
+class SampleDiffEntryResponse(BaseModel):
+    row_index: int
+    before: str | None
+    after: str | None
+
+    model_config = {"from_attributes": True}
+
+
+class CleaningPreviewResponse(BaseModel):
+    column: str | None
+    sample_diff: list[SampleDiffEntryResponse]
+    affected_rows_count: int
+
+    model_config = {"from_attributes": True}

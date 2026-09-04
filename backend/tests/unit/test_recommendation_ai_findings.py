@@ -9,7 +9,7 @@ from app.models.insight import Story
 from app.visualization.recommendation import (
     generate_recommendations,
     recommendation_shortfall_reason,
-    split_top_and_derived,
+    truncate_to_top,
 )
 
 _SEMANTIC_TYPES = {"revenue": "currency", "units": "numeric", "region": "categorical"}
@@ -52,7 +52,9 @@ def test_ai_finding_adds_a_new_candidate_not_covered_by_stories() -> None:
     assert recs[0].spec.chart_type == "scatter"
 
 
-def test_ai_finding_redundant_with_existing_story_is_dropped() -> None:
+def test_ai_finding_redundant_with_existing_story_wins_the_slot() -> None:
+    """AI-first priority: Gemini-sourced candidates are processed before deterministic Stories,
+    so when both cover the same analytical question, the AI-sourced one keeps the slot."""
     story = _story(["region", "revenue"], chart_type="bar")
     finding = AnalyticalFinding(
         type=FindingType.COMPARISON,
@@ -63,7 +65,7 @@ def test_ai_finding_redundant_with_existing_story_is_dropped() -> None:
     )
     recs = generate_recommendations([story], _SEMANTIC_TYPES, "v1", ai_findings=[finding])
     assert len(recs) == 1
-    assert recs[0].story_id == str(story.id)  # deterministic story wins the redundancy slot
+    assert recs[0].story_id == "ai-finding:0"  # Gemini-sourced candidate wins the redundancy slot
 
 
 def test_ai_finding_with_unknown_suggested_chart_falls_back_to_bar() -> None:
@@ -106,7 +108,7 @@ def test_shortfall_reason_absent_when_eight_or_more() -> None:
     assert recommendation_shortfall_reason(12) is None
 
 
-def test_split_top_and_derived_never_returns_more_than_eight_in_top() -> None:
+def test_truncate_to_top_never_returns_more_than_eight() -> None:
     findings = [
         AnalyticalFinding(
             type=FindingType.OTHER,
@@ -119,6 +121,5 @@ def test_split_top_and_derived_never_returns_more_than_eight_in_top() -> None:
     ]
     semantic_types = {**_SEMANTIC_TYPES, **{f"field_{i}": "categorical" for i in range(12)}}
     recs = generate_recommendations([], semantic_types, "v1", ai_findings=findings)
-    top, derived = split_top_and_derived(recs)
+    top = truncate_to_top(recs)
     assert len(top) <= 8
-    assert len(top) + len(derived) == len(recs)

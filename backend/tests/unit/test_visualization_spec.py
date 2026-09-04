@@ -114,6 +114,20 @@ def test_apply_command_add_and_remove_annotation() -> None:
     assert len(without_annotation.annotations) == 0
 
 
+def test_apply_command_add_and_remove_filter() -> None:
+    spec = _spec()
+    add_command = VisualizationCommand(
+        type=CommandType.FILTER_DATA,
+        params={"id": "f1", "field": "region", "operator": "eq", "value": "West"},
+    )
+    with_filter = apply_command(spec, add_command)
+    assert len(with_filter.filters) == 1
+
+    remove_command = VisualizationCommand(type=CommandType.REMOVE_FILTER, params={"id": "f1"})
+    without_filter = apply_command(with_filter, remove_command)
+    assert len(without_filter.filters) == 0
+
+
 def test_apply_command_change_field() -> None:
     spec = _spec()
     command = VisualizationCommand(

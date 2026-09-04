@@ -102,10 +102,10 @@ async def test_dataset_content_cannot_alter_the_system_instruction() -> None:
             columns=[
                 ColumnSummary(
                     name="category",
-                    semantic_type="categorical",
-                    null_ratio=0.0,
-                    unique_count=1,
-                    stats={"top_values": {malicious_value: 10}},
+                    data_type="categorical",
+                    null_percentage=0.0,
+                    cardinality=1,
+                    sample_values=[malicious_value],
                 )
             ],
             redacted_column_names=[],

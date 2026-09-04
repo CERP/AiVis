@@ -4,6 +4,8 @@ import pytest
 from httpx import ASGITransport, AsyncClient
 from sqlmodel.ext.asyncio.session import AsyncSession
 
+from app.ai.base import AIProvider, AIProviderError
+from app.ai.schemas import StudioEditCommand, StudioEditCommandType
 from app.core.db import get_session
 from app.main import app
 from app.services.storage import get_storage_service
@@ -164,5 +166,127 @@ async def test_apply_command_rejects_invalid_field_change(client: AsyncClient) -
         assert patch_resp.status_code == 422
 
         # rejected command must not have created a new version
+        versions_resp = await c.get(f"/api/visualizations/{viz_id}/versions", headers=headers)
+        assert len(versions_resp.json()) == 1
+
+
+class FakeStudioEditProvider(AIProvider):
+    def __init__(self, response: StudioEditCommand | None = None, fail: bool = False):
+        self._response = response
+        self._fail = fail
+
+    async def generate_structured(self, *, system_instruction, prompt, response_schema):
+        if self._fail:
+            raise AIProviderError("simulated Gemini failure")
+        assert self._response is not None
+        return self._response
+
+
+async def test_nl_edit_applies_translated_command(
+    client: AsyncClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(
+        "app.api.v1.visualizations.get_ai_provider",
+        lambda: FakeStudioEditProvider(
+            response=StudioEditCommand(
+                command_type=StudioEditCommandType.CHANGE_AGGREGATION,
+                channel="y",
+                aggregation="median",
+                explanation="Switched the y-axis aggregation to median.",
+            )
+        ),
+    )
+
+    async with client as c:
+        token, project_id, version_id = await _setup(c)
+        headers = {"Authorization": f"Bearer {token}"}
+
+        create_resp = await c.post(
+            "/api/visualizations",
+            params={"project_id": project_id},
+            json={"title": "Revenue by region", "spec": _spec_payload(version_id)},
+            headers=headers,
+        )
+        viz_id = create_resp.json()["id"]
+
+        nl_resp = await c.post(
+            f"/api/visualizations/{viz_id}/nl-edit",
+            json={"query": "change y-axis aggregation to median"},
+            headers=headers,
+        )
+        assert nl_resp.status_code == 200, nl_resp.text
+        new_version = nl_resp.json()
+        assert new_version["version_number"] == 2
+        assert new_version["spec"]["encoding"]["y"]["aggregation"] == "median"
+        assert new_version["change_summary"] == "Switched the y-axis aggregation to median."
+        assert new_version["created_by"] == "ai"
+
+
+async def test_nl_edit_provider_failure_returns_502(
+    client: AsyncClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(
+        "app.api.v1.visualizations.get_ai_provider",
+        lambda: FakeStudioEditProvider(fail=True),
+    )
+
+    async with client as c:
+        token, project_id, version_id = await _setup(c)
+        headers = {"Authorization": f"Bearer {token}"}
+
+        create_resp = await c.post(
+            "/api/visualizations",
+            params={"project_id": project_id},
+            json={"title": "Revenue by region", "spec": _spec_payload(version_id)},
+            headers=headers,
+        )
+        viz_id = create_resp.json()["id"]
+
+        nl_resp = await c.post(
+            f"/api/visualizations/{viz_id}/nl-edit",
+            json={"query": "do something"},
+            headers=headers,
+        )
+        assert nl_resp.status_code == 502
+
+        versions_resp = await c.get(f"/api/visualizations/{viz_id}/versions", headers=headers)
+        assert len(versions_resp.json()) == 1
+
+
+async def test_nl_edit_hallucinated_field_rejected(
+    client: AsyncClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(
+        "app.api.v1.visualizations.get_ai_provider",
+        lambda: FakeStudioEditProvider(
+            response=StudioEditCommand(
+                command_type=StudioEditCommandType.CHANGE_FIELD,
+                channel="x",
+                field="not_a_real_column",
+                encoding_type="nominal",
+                explanation="x",
+            )
+        ),
+    )
+
+    async with client as c:
+        token, project_id, version_id = await _setup(c)
+        headers = {"Authorization": f"Bearer {token}"}
+
+        create_resp = await c.post(
+            "/api/visualizations",
+            params={"project_id": project_id},
+            json={"title": "Revenue by region", "spec": _spec_payload(version_id)},
+            headers=headers,
+        )
+        viz_id = create_resp.json()["id"]
+
+        nl_resp = await c.post(
+            f"/api/visualizations/{viz_id}/nl-edit",
+            json={"query": "put nonsense on the x axis"},
+            headers=headers,
+        )
+        assert nl_resp.status_code == 422
+
         versions_resp = await c.get(f"/api/visualizations/{viz_id}/versions", headers=headers)
         assert len(versions_resp.json()) == 1

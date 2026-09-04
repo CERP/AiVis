@@ -36,7 +36,7 @@ def test_pii_columns_are_redacted_not_sent() -> None:
     assert sent_names == {"region"}
 
 
-def test_null_ratio_computed_from_row_count() -> None:
+def test_null_percentage_computed_from_row_count() -> None:
     col = _column("region", is_pii=False)
     col.null_count = 5
     profile = DatasetProfileResponse(
@@ -44,7 +44,7 @@ def test_null_ratio_computed_from_row_count() -> None:
     )
 
     summary = build_dataset_summary(profile)
-    assert summary.columns[0].null_ratio == 0.5
+    assert summary.columns[0].null_percentage == 50.0
 
 
 def test_no_row_level_data_in_summary() -> None:

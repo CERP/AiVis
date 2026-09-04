@@ -1,25 +1,43 @@
 """Builds the minimal, PII-safe payload sent to an AI provider.
 
-Never send raw rows or PII-flagged column contents. The AI only ever sees: schema (names +
-semantic types), aggregate statistics, and categorical top-value labels — never row-level data.
+Never send raw rows or PII-flagged column contents. The AI only ever sees: schema (name, data
+type, cardinality, null percentage) and up to 3 representative sample values per column --
+never the full aggregate-stats blob (mean/median/std/skew/outliers/all top values) and never
+row-level data. Trimmed deliberately for prompt-size/latency: the full stats blob is still
+computed and stored by the profiler for every other consumer, only the AI payload is thinned.
 This is the boundary described in AI_ARCHITECTURE.md's data-minimization section.
 """
 
 from __future__ import annotations
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from app.insights.data_quality import DataQualityReport
 from app.models.insight import Insight
 from app.schemas.profile import DatasetProfileResponse
 
+_MAX_SAMPLE_VALUES = 3
+
+
+def _sample_values(stats: dict) -> list[str]:
+    """Distills the profiler's full stats blob into up to 3 representative values --
+    top categories for categorical/text columns, min/median/max for numeric, min/max for
+    dates -- instead of forwarding the entire aggregate-stats dict to the model."""
+    top_values = stats.get("top_values")
+    if top_values:
+        return [str(v) for v in list(top_values)[:_MAX_SAMPLE_VALUES]]
+
+    numeric_candidates = [stats.get("min"), stats.get("median"), stats.get("max")]
+    values = [str(v) for v in numeric_candidates if v is not None]
+    return values[:_MAX_SAMPLE_VALUES]
+
 
 class ColumnSummary(BaseModel):
     name: str
-    semantic_type: str | None
-    null_ratio: float
-    unique_count: int
-    stats: dict
+    data_type: str | None
+    cardinality: int
+    null_percentage: float
+    sample_values: list[str] = Field(max_length=_MAX_SAMPLE_VALUES)
 
 
 class DatasetSummary(BaseModel):
@@ -42,10 +60,10 @@ def build_dataset_summary(profile: DatasetProfileResponse) -> DatasetSummary:
         columns.append(
             ColumnSummary(
                 name=col.name,
-                semantic_type=col.semantic_type,
-                null_ratio=round(null_ratio, 4),
-                unique_count=col.unique_count,
-                stats=col.stats,
+                data_type=col.semantic_type,
+                cardinality=col.unique_count,
+                null_percentage=round(null_ratio * 100, 2),
+                sample_values=_sample_values(col.stats),
             )
         )
 

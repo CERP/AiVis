@@ -64,6 +64,11 @@ REQUIRED_ENCODINGS: dict[str, tuple[str, ...]] = {
 # a valid chart, it's a half-configured one, and rendering it would silently drop a price.
 _CHANNEL_GROUPS: tuple[tuple[str, ...], ...] = (("open", "high", "low", "close"),)
 
+# Chart types whose whole point is a relationship between two continuous measures -- a
+# categorical field on either channel isn't "a scatter with a weird axis," it's a bar chart
+# mislabeled as a scatter. Enforced beyond the generic per-channel semantic-type check above.
+_REQUIRES_QUANTITATIVE_X_AND_Y: frozenset[str] = frozenset({"scatter", "bubble"})
+
 _SEMANTIC_TO_COMPATIBLE_ENCODINGS: dict[str, set[EncodingType]] = {
     "numeric": {EncodingType.QUANTITATIVE, EncodingType.ORDINAL},
     "currency": {EncodingType.QUANTITATIVE, EncodingType.ORDINAL},
@@ -134,6 +139,15 @@ def validate_spec(
                 f"Encoding '{channel}' field '{encoding.field}' (semantic type "
                 f"'{semantic_type}') is not compatible with encoding type '{encoding.type}'"
             )
+
+    if spec.chart_type in _REQUIRES_QUANTITATIVE_X_AND_Y:
+        for channel in ("x", "y"):
+            enc = encoding_by_channel.get(channel)
+            if enc is not None and enc.type != EncodingType.QUANTITATIVE:
+                errors.append(
+                    f"Chart type '{spec.chart_type}' requires a quantitative '{channel}' "
+                    f"encoding, got '{enc.type}'"
+                )
 
     for filt in spec.filters:
         if filt.field not in column_semantic_types:

@@ -12,6 +12,7 @@ expensive stages, don't require exact per-stage resume tracking to get that bene
 
 from __future__ import annotations
 
+import asyncio
 import io
 from datetime import UTC, datetime
 
@@ -22,7 +23,7 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 from app.ai.base import AIProviderError
 from app.ai.context_builder import build_analysis_context
 from app.ai.factory import get_ai_provider
-from app.ai.schemas import AnalyticalFindings
+from app.ai.schemas import AnalyticalFindings, ChartRecommendations
 from app.insights.data_quality import ColumnQualityInput, analyze_data_quality
 from app.models.analysis import Analysis, AnalysisStatus
 from app.models.dataset import DatasetVersion
@@ -31,13 +32,14 @@ from app.repositories.insight import InsightRepository, StoryRepository
 from app.schemas.profile import ColumnProfileResponse, DatasetProfileResponse
 from app.schemas.recommendation import VisualizationRecommendationResponse
 from app.services.ai_findings import analyze_dataset_findings
+from app.services.chart_recommendations import analyze_chart_recommendations
 from app.services.insight_analysis import analyze_dataset_version
 from app.services.storage import get_storage_service
 from app.services.story_analysis import generate_stories_for_version
 from app.visualization.recommendation import (
     generate_recommendations,
     recommendation_shortfall_reason,
-    split_top_and_derived,
+    truncate_to_top,
 )
 
 
@@ -151,14 +153,36 @@ async def run_analysis(session: AsyncSession, analysis: Analysis, version: Datas
         await _set_stage(session, analysis, AnalysisStatus.AI_ANALYZING)
 
         findings: AnalyticalFindings | None = None
+        chart_recommendations: ChartRecommendations | None = None
         try:
             provider = get_ai_provider()
-            findings = await analyze_dataset_findings(provider, context)
-            analysis.ai_findings = findings.model_dump(mode="json")
         except AIProviderError as exc:
             # AI is advisory -- degrade gracefully to deterministic-only recommendations rather
             # than failing the whole analysis, per "deterministic services provide correctness."
             analysis.ai_findings = {"error": str(exc)[:500], "findings": []}
+        else:
+            # Both calls are read-only and depend only on `context` above -- run them
+            # concurrently so total AI latency is one round-trip, not two.
+            findings_result, chart_recs_result = await asyncio.gather(
+                analyze_dataset_findings(provider, context),
+                analyze_chart_recommendations(provider, context),
+                return_exceptions=True,
+            )
+
+            if isinstance(findings_result, AIProviderError):
+                analysis.ai_findings = {"error": str(findings_result)[:500], "findings": []}
+            elif isinstance(findings_result, BaseException):
+                raise findings_result
+            else:
+                findings = findings_result
+                analysis.ai_findings = findings.model_dump(mode="json")
+
+            if isinstance(chart_recs_result, AIProviderError):
+                chart_recommendations = None
+            elif isinstance(chart_recs_result, BaseException):
+                raise chart_recs_result
+            else:
+                chart_recommendations = chart_recs_result
 
         await _set_stage(session, analysis, AnalysisStatus.GENERATING_RECOMMENDATIONS)
 
@@ -167,6 +191,9 @@ async def run_analysis(session: AsyncSession, analysis: Analysis, version: Datas
             column_semantic_types,
             str(version.id),
             ai_findings=findings.findings if findings else None,
+            gemini_chart_recommendations=(
+                chart_recommendations.recommendations if chart_recommendations else None
+            ),
         )
 
         await _set_stage(session, analysis, AnalysisStatus.VALIDATING)
@@ -175,7 +202,7 @@ async def run_analysis(session: AsyncSession, analysis: Analysis, version: Datas
         # frontend progress checklist, not as separate rework.
 
         await _set_stage(session, analysis, AnalysisStatus.RANKING)
-        top, derived = split_top_and_derived(recommendations)
+        top = truncate_to_top(recommendations)
         shortfall_reason = recommendation_shortfall_reason(len(top))
 
         await _set_stage(session, analysis, AnalysisStatus.GENERATING_PREVIEWS)
@@ -183,10 +210,6 @@ async def run_analysis(session: AsyncSession, analysis: Analysis, version: Datas
             "top": [
                 VisualizationRecommendationResponse(**r.__dict__).model_dump(mode="json")
                 for r in top
-            ],
-            "derived": [
-                VisualizationRecommendationResponse(**r.__dict__).model_dump(mode="json")
-                for r in derived
             ],
             "shortfall_reason": shortfall_reason,
         }

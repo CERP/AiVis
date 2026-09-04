@@ -1,8 +1,9 @@
 "use client";
 
 import { useMutation } from "@tanstack/react-query";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 import { AppShell } from "@/components/layout/app-shell";
 import { Button } from "@/components/ui/button";
@@ -15,10 +16,15 @@ import { useAuthStore } from "@/store/auth-store";
 
 export default function SignupPage() {
   const router = useRouter();
+  const token = useAuthStore((s) => s.token);
   const setToken = useAuthStore((s) => s.setToken);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [organizationName, setOrganizationName] = useState("");
+
+  useEffect(() => {
+    if (token) router.replace("/projects");
+  }, [token, router]);
 
   const mutation = useMutation({
     mutationFn: signup,
@@ -88,6 +94,12 @@ export default function SignupPage() {
               <Button type="submit" variant="accent" disabled={mutation.isPending}>
                 {mutation.isPending ? "Creating account…" : "Create account"}
               </Button>
+              <p className="text-center text-sm text-muted-foreground">
+                Already have an account?{" "}
+                <Link href="/login" className="text-accent underline-offset-4 hover:underline">
+                  Log in
+                </Link>
+              </p>
             </form>
           </CardContent>
         </Card>

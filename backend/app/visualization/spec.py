@@ -77,6 +77,7 @@ class FilterOperator(StrEnum):
 
 
 class Filter(BaseModel):
+    id: str
     field: str
     operator: FilterOperator
     value: str | float | list[str] | list[float] | None = None
@@ -121,6 +122,13 @@ class VisualizationMetadata(BaseModel):
     dataset_id: str
     dataset_version_id: str
     story_id: str | None = None
+    generated_by: str = "deterministic"
+    """Provenance: 'deterministic' (Story pipeline, no LLM), 'gemini' (AI-proposed chart, every
+    field still re-validated against the real schema before this spec exists), or 'user' (manual
+    studio edit)."""
+    reasoning: str | None = None
+    """Gemini's own one-sentence justification for this chart/field pairing, when
+    generated_by='gemini' -- never shown as a claim of fact, just the model's stated reasoning."""
 
 
 class VisualizationSpec(BaseModel):

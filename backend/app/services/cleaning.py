@@ -5,6 +5,7 @@ version. The original version is never mutated — cleaning always appends to th
 from __future__ import annotations
 
 import io
+from dataclasses import dataclass, field
 
 import polars as pl
 import pyarrow.parquet as pq
@@ -52,6 +53,69 @@ async def _load_dataframe(version: DatasetVersion) -> pl.DataFrame:
     storage = get_storage_service()
     parquet_bytes = storage.download_bytes(storage.bucket_processed, version.parquet_object_key)
     return pl.from_arrow(pq.read_table(io.BytesIO(parquet_bytes)))
+
+
+def _stringify(value: object) -> str | None:
+    return None if value is None else str(value)
+
+
+@dataclass
+class SampleDiffEntry:
+    row_index: int
+    before: str | None
+    after: str | None
+
+
+@dataclass
+class CleaningPreviewResult:
+    column: str | None
+    sample_diff: list[SampleDiffEntry] = field(default_factory=list)
+    affected_rows_count: int = 0
+
+
+async def preview_cleaning_operation(
+    *,
+    source_version: DatasetVersion,
+    operation_type: str,
+    column_name: str | None,
+    params: dict,
+    sample_limit: int = 10,
+) -> CleaningPreviewResult:
+    """Computes a before/after diff without writing anything -- no new DatasetVersion, no
+    storage write, no DB row. Runs the exact same pure transform `apply_cleaning_operation`
+    would persist, so what the user previews is exactly what applying would produce; the
+    original version is never touched either way."""
+    df = await _load_dataframe(source_version)
+
+    if operation_type == "dedupe_rows":
+        subset = params.get("subset")
+        result = dedupe_rows(df, subset=subset)
+        return CleaningPreviewResult(column=None, affected_rows_count=result.removed_count)
+
+    if operation_type not in _COLUMN_OPERATIONS:
+        raise CleaningError(f"Unknown operation type: {operation_type}")
+    if column_name is None or column_name not in df.columns:
+        raise CleaningError(f"Unknown column: {column_name}")
+
+    fn = _COLUMN_OPERATIONS[operation_type]
+    kwargs = {}
+    if operation_type == "standardize_case" and "case" in params:
+        kwargs["case"] = params["case"]
+
+    before_series = df[column_name]
+    after_series = fn(before_series, **kwargs).series
+
+    diffs: list[SampleDiffEntry] = []
+    for idx, (before, after) in enumerate(zip(before_series, after_series, strict=True)):
+        if before == after or (before is None and after is None):
+            continue
+        diffs.append(SampleDiffEntry(row_index=idx, before=_stringify(before), after=_stringify(after)))
+
+    return CleaningPreviewResult(
+        column=column_name,
+        sample_diff=diffs[:sample_limit],
+        affected_rows_count=len(diffs),
+    )
 
 
 async def apply_cleaning_operation(

@@ -117,6 +117,75 @@ async def test_unknown_operation_returns_422(client: AsyncClient) -> None:
         assert resp.status_code == 422
 
 
+async def test_preview_coerce_numeric_does_not_create_a_version(client: AsyncClient) -> None:
+    """The preview must show real changed cells and must not create a new dataset version --
+    applying the same operation afterward must still land on version_number 1."""
+    async with client as c:
+        dataset, headers = await _signup_and_upload(c, "messy.csv")
+
+        preview_resp = await c.post(
+            f"/api/datasets/{dataset['id']}/clean/preview",
+            json={"operation_type": "coerce_numeric", "column_name": "units"},
+            headers=headers,
+        )
+        assert preview_resp.status_code == 200, preview_resp.text
+        preview = preview_resp.json()
+        assert preview["column"] == "units"
+        assert preview["affected_rows_count"] >= 1
+        assert all(entry["before"] != entry["after"] for entry in preview["sample_diff"])
+
+        apply_resp = await c.post(
+            f"/api/datasets/{dataset['id']}/clean",
+            json={"operation_type": "coerce_numeric", "column_name": "units"},
+            headers=headers,
+        )
+        assert apply_resp.status_code == 201
+        assert apply_resp.json()["version_number"] == 1  # preview created no prior version
+
+
+async def test_preview_dedupe_reports_affected_rows_without_removing_them(client: AsyncClient) -> None:
+    async with client as c:
+        dataset, headers = await _signup_and_upload(c, "messy.csv")
+
+        preview_resp = await c.post(
+            f"/api/datasets/{dataset['id']}/clean/preview",
+            json={
+                "operation_type": "dedupe_rows",
+                "params": {"subset": ["date", "region", "product_name", "revenue", "units"]},
+            },
+            headers=headers,
+        )
+        assert preview_resp.status_code == 200, preview_resp.text
+        body = preview_resp.json()
+        assert body["column"] is None
+        assert body["affected_rows_count"] == 1  # matches the apply-path assertion below
+
+        rows_before = await c.get(f"/api/datasets/{dataset['id']}/rows", headers=headers)
+        row_count_before = len(rows_before.json()["rows"])
+
+        apply_resp = await c.post(
+            f"/api/datasets/{dataset['id']}/clean",
+            json={
+                "operation_type": "dedupe_rows",
+                "params": {"subset": ["date", "region", "product_name", "revenue", "units"]},
+            },
+            headers=headers,
+        )
+        assert apply_resp.json()["row_count"] == row_count_before - body["affected_rows_count"]
+
+
+async def test_preview_unknown_operation_returns_422(client: AsyncClient) -> None:
+    async with client as c:
+        dataset, headers = await _signup_and_upload(c, "clean.csv")
+
+        resp = await c.post(
+            f"/api/datasets/{dataset['id']}/clean/preview",
+            json={"operation_type": "not_a_real_op"},
+            headers=headers,
+        )
+        assert resp.status_code == 422
+
+
 async def test_clean_requires_ready_dataset(client: AsyncClient) -> None:
     async with client as c:
         dataset, headers = await _signup_and_upload(c, "malformed.csv")

@@ -98,8 +98,7 @@ export default function DatasetDetailPage() {
   const activeStageIndex = stageEntries.findIndex(([, s]) => s === "processing");
   const stageLabels = stageEntries.map(([key]) => ANALYSIS_STAGE_LABELS[key] ?? key);
 
-  const recommendationCount =
-    (analysis?.recommendations?.top.length ?? 0) + (analysis?.recommendations?.derived.length ?? 0);
+  const recommendationCount = analysis?.recommendations?.top.length ?? 0;
 
   return (
     <AppShell>
@@ -287,26 +286,6 @@ export default function DatasetDetailPage() {
                     isOpeningStudio={openInStudio.isPending}
                   />
                 ))}
-              </div>
-            )}
-
-            {analysis.recommendations.derived.length > 0 && (
-              <div className="mt-4 flex flex-col gap-4">
-                <SectionHeading as="h2" className="text-lg">
-                  Explore more
-                </SectionHeading>
-                <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
-                  {analysis.recommendations.derived.map((rec, index) => (
-                    <RecommendationCard
-                      key={rec.story_id}
-                      recommendation={rec}
-                      index={index}
-                      previewRows={rowsQuery.data?.rows}
-                      onOpenStudio={(r) => openInStudio.mutate(r)}
-                      isOpeningStudio={openInStudio.isPending}
-                    />
-                  ))}
-                </div>
               </div>
             )}
           </div>

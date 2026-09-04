@@ -32,7 +32,6 @@ export interface DataQuality {
 
 export interface AnalysisRecommendations {
   top: VisualizationRecommendation[];
-  derived: VisualizationRecommendation[];
   shortfall_reason: string | null;
 }
 

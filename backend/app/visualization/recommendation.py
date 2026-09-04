@@ -11,9 +11,10 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from app.ai.schemas import AnalyticalFinding
+from app.ai.schemas import AnalyticalFinding, ChartRecommendation
 from app.models.insight import Story
 from app.visualization.spec import (
+    Aggregation,
     Encoding,
     Encodings,
     EncodingType,
@@ -107,6 +108,7 @@ def _build_spec(
     column_semantic_types: dict[str, str],
     dataset_version_id: str,
     story_id: str,
+    generated_by: str = "deterministic",
 ) -> VisualizationSpec | None:
     if not fields:
         return None
@@ -191,7 +193,79 @@ def _build_spec(
         encoding=encoding,
         typography={"title": title},
         metadata=VisualizationMetadata(
-            dataset_id="", dataset_version_id=dataset_version_id, story_id=story_id
+            dataset_id="",
+            dataset_version_id=dataset_version_id,
+            story_id=story_id,
+            generated_by=generated_by,
+        ),
+    )
+
+
+def _build_spec_from_gemini(
+    rec: ChartRecommendation,
+    *,
+    column_semantic_types: dict[str, str],
+    dataset_version_id: str,
+    story_id: str,
+) -> VisualizationSpec | None:
+    """Builds a VisualizationSpec directly from Gemini's explicit x_field/y_field/color_field/
+    aggregate mapping -- no positional inference, since the BI-analyst prompt already assigns
+    each field to its channel. Every field is re-checked against the real schema and every
+    channel's semantic type is re-derived here (never trusted from the model), exactly like the
+    deterministic Story path."""
+    fields = [f for f in (rec.x_field, rec.y_field, rec.color_field) if f is not None]
+    if not fields or any(f not in column_semantic_types for f in fields):
+        return None  # references a field that doesn't exist -- discard, never fabricate
+
+    encoding = Encodings()
+    aggregation = Aggregation(rec.aggregate.value) if rec.aggregate else Aggregation.NONE
+
+    if rec.x_field is not None:
+        enc_type = _encoding_type_for(column_semantic_types.get(rec.x_field))
+        if enc_type is None:
+            return None
+        encoding.x = Encoding(field=rec.x_field, type=enc_type)
+
+    if rec.y_field is not None:
+        enc_type = _encoding_type_for(column_semantic_types.get(rec.y_field))
+        if enc_type is None:
+            return None
+        is_measure = enc_type == EncodingType.QUANTITATIVE
+        encoding.y = Encoding(
+            field=rec.y_field, type=enc_type, aggregation=aggregation if is_measure else Aggregation.NONE
+        )
+
+    if rec.color_field is not None:
+        enc_type = _encoding_type_for(column_semantic_types.get(rec.color_field))
+        if enc_type is None:
+            return None
+        encoding.color = Encoding(field=rec.color_field, type=enc_type)
+
+    # Part-to-whole charts encode via color+size, not x/y -- the prompt asks Gemini for the
+    # category on color_field and the measure on y_field, but it sometimes puts the category on
+    # x_field instead (observed live); remap whichever of x/color actually holds the category.
+    if rec.chart_type in _TWO_FIELD_CHANNEL_ORDER and encoding.y is not None:
+        encoding.size = Encoding(
+            field=encoding.y.field, type=encoding.y.type, aggregation=aggregation
+        )
+        encoding.y = None
+        if encoding.color is None and encoding.x is not None:
+            encoding.color = encoding.x
+            encoding.x = None
+
+    if encoding.x is None and encoding.y is None and encoding.color is None:
+        return None
+
+    return VisualizationSpec(
+        chart_type=rec.chart_type,
+        encoding=encoding,
+        typography={"title": rec.title},
+        metadata=VisualizationMetadata(
+            dataset_id="",
+            dataset_version_id=dataset_version_id,
+            story_id=story_id,
+            generated_by="gemini",
+            reasoning=rec.reason,
         ),
     )
 
@@ -227,14 +301,82 @@ def generate_recommendations(
     column_semantic_types: dict[str, str],
     dataset_version_id: str,
     ai_findings: list[AnalyticalFinding] | None = None,
+    gemini_chart_recommendations: list[ChartRecommendation] | None = None,
 ) -> list[VisualizationRecommendation]:
-    """The deterministic Story-derived candidates are always the core of the list. AI findings
-    (Gemini, advisory only) can *add* candidates for field combinations the fixed detector set
-    didn't cover -- every AI-derived field reference is re-validated against the real schema
-    here, exactly like a Story-derived one, so a hallucinated column can never reach the user.
-    Gemini's own ranking/confidence is never trusted directly for ordering beyond this."""
+    """AI-first priority: valid Gemini-sourced candidates (the explicit chart-recommendation
+    engine, then the advisory findings engine) always rank above deterministic Story-derived
+    ones. Every AI-derived field reference is re-validated against the real schema here, exactly
+    like a Story-derived one, so a hallucinated column can never reach the user -- but once
+    validated, a Gemini candidate is never outranked or dedup-evicted by a Story candidate.
+    Deterministic Stories only fill remaining slots once every valid Gemini candidate has a
+    seat -- see truncate_to_top() for the top-8 cutoff this ordering feeds into."""
     seen_keys: set[tuple] = set()
-    recommendations: list[VisualizationRecommendation] = []
+    ai_tier: list[VisualizationRecommendation] = []
+    deterministic_tier: list[VisualizationRecommendation] = []
+
+    for rec in gemini_chart_recommendations or []:
+        spec = _build_spec_from_gemini(
+            rec,
+            column_semantic_types=column_semantic_types,
+            dataset_version_id=dataset_version_id,
+            story_id=f"gemini-chart:{rec.rank}",
+        )
+        if spec is None:
+            continue
+
+        result = validate_spec(spec, column_semantic_types)
+        if not result.is_valid:
+            continue
+
+        key = _redundancy_key(spec)
+        if key in seen_keys:
+            continue
+        seen_keys.add(key)
+
+        ai_tier.append(
+            VisualizationRecommendation(
+                story_id=f"gemini-chart:{rec.rank}",
+                title=rec.title,
+                description=rec.description,
+                spec=spec,
+                confidence=rec.confidence,
+            )
+        )
+
+    for index, finding in enumerate(ai_findings or []):
+        if not all(f in column_semantic_types for f in finding.fields):
+            continue  # references a field that doesn't exist -- discard, never fabricate
+
+        spec = _build_spec(
+            fields=finding.fields,
+            chart_type=finding.suggested_chart_type or "bar",
+            title=finding.description,
+            column_semantic_types=column_semantic_types,
+            dataset_version_id=dataset_version_id,
+            story_id=f"ai-finding:{index}",
+            generated_by="gemini",
+        )
+        if spec is None:
+            continue
+
+        result = validate_spec(spec, column_semantic_types)
+        if not result.is_valid:
+            continue
+
+        key = _redundancy_key(spec)
+        if key in seen_keys:
+            continue
+        seen_keys.add(key)
+
+        ai_tier.append(
+            VisualizationRecommendation(
+                story_id=f"ai-finding:{index}",
+                title=finding.description,
+                description=f"AI-identified {finding.type.value}: {finding.description}",
+                spec=spec,
+                confidence=finding.confidence,
+            )
+        )
 
     for story in stories:
         spec = _build_spec(
@@ -257,7 +399,7 @@ def generate_recommendations(
             continue
         seen_keys.add(key)
 
-        recommendations.append(
+        deterministic_tier.append(
             VisualizationRecommendation(
                 story_id=str(story.id),
                 title=story.title,
@@ -267,51 +409,23 @@ def generate_recommendations(
             )
         )
 
-    for index, finding in enumerate(ai_findings or []):
-        if not all(f in column_semantic_types for f in finding.fields):
-            continue  # references a field that doesn't exist -- discard, never fabricate
-
-        spec = _build_spec(
-            fields=finding.fields,
-            chart_type=finding.suggested_chart_type or "bar",
-            title=finding.description,
-            column_semantic_types=column_semantic_types,
-            dataset_version_id=dataset_version_id,
-            story_id=f"ai-finding:{index}",
-        )
-        if spec is None:
-            continue
-
-        result = validate_spec(spec, column_semantic_types)
-        if not result.is_valid:
-            continue
-
-        key = _redundancy_key(spec)
-        if key in seen_keys:
-            continue
-        seen_keys.add(key)
-
-        recommendations.append(
-            VisualizationRecommendation(
-                story_id=f"ai-finding:{index}",
-                title=finding.description,
-                description=f"AI-identified {finding.type.value}: {finding.description}",
-                spec=spec,
-                confidence=finding.confidence,
-            )
-        )
-
-    recommendations.sort(key=lambda r: r.confidence, reverse=True)
-    return recommendations
+    ai_tier.sort(key=lambda r: r.confidence, reverse=True)
+    deterministic_tier.sort(key=lambda r: r.confidence, reverse=True)
+    return ai_tier + deterministic_tier
 
 
-def split_top_and_derived(
-    recommendations: list[VisualizationRecommendation], *, top_n: int = 8
-) -> tuple[list[VisualizationRecommendation], list[VisualizationRecommendation]]:
-    return recommendations[:top_n], recommendations[top_n:]
+MAX_RECOMMENDATIONS = 8
 
 
-def recommendation_shortfall_reason(count: int, *, top_n: int = 8) -> str | None:
+def truncate_to_top(
+    recommendations: list[VisualizationRecommendation], *, top_n: int = MAX_RECOMMENDATIONS
+) -> list[VisualizationRecommendation]:
+    """Hard cap -- never return more than `top_n` recommendations. No "Explore more" overflow
+    list: a dataset either supports up to `top_n` meaningfully-different charts or fewer."""
+    return recommendations[:top_n]
+
+
+def recommendation_shortfall_reason(count: int, *, top_n: int = MAX_RECOMMENDATIONS) -> str | None:
     """Never fabricate filler charts just to hit a round number -- when a dataset genuinely
     can't support `top_n` meaningfully-different visualizations, say so explicitly instead of
     padding the list."""

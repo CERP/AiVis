@@ -10,7 +10,7 @@ from httpx import ASGITransport, AsyncClient
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.ai.base import AIProvider, AIProviderError
-from app.ai.schemas import AnalyticalFindings
+from app.ai.schemas import AnalyticalFindings, ChartRecommendations
 from app.core.db import get_session
 from app.main import app
 from app.repositories.analysis import AnalysisRepository
@@ -26,11 +26,14 @@ FIXTURES = Path(__file__).resolve().parents[1] / "fixtures"
 class FakeFindingsProvider(AIProvider):
     def __init__(self, response: AnalyticalFindings | None = None, fail: bool = False):
         self._response = response if response is not None else AnalyticalFindings(findings=[])
+        self._chart_response = ChartRecommendations(recommendations=[])
         self._fail = fail
 
     async def generate_structured(self, *, system_instruction, prompt, response_schema):
         if self._fail:
             raise AIProviderError("simulated Gemini failure")
+        if response_schema is ChartRecommendations:
+            return self._chart_response
         return self._response
 
 
@@ -124,7 +127,7 @@ async def test_full_pipeline_produces_validated_recommendations(
         # no two recommendations should target the exact same (chart_type, field-set) --
         # redundancy filtering collapses near-duplicates within a family but chart types in
         # different families (e.g. bar vs donut) may legitimately share a field-set.
-        all_recs = recs["top"] + recs["derived"]
+        all_recs = recs["top"]
         keys = {
             (
                 r["spec"]["chart_type"],

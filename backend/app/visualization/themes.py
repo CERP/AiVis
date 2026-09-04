@@ -1,8 +1,11 @@
-"""Editorial theme token system. Conceptual themes inspired by data-journalism principles
-(clarity, restraint, hierarchy) -- not a copy of any outlet's actual branding, typography, or
-layout. Palettes use the Okabe-Ito colorblind-safe categorical set (or derivations of it) and
-every text/background pair meets WCAG AA contrast (4.5:1) at the sizes used, checked by
-_contrast_ratio below rather than assumed.
+"""Theme token system for the Visualization Studio. Exactly 8 distinct, professional theme
+directions (Executive Neutral, High Contrast, Minimal Professional, Dark Data, Soft Corporate,
+Technical, Institutional, Cool Professional) -- no more, no fewer, matching the pipeline's
+strict top-8 contract elsewhere. Palettes use Paul Tol's colorblind-safe "vibrant" qualitative
+set (Tol, 2021) with no yellow hue: a saturated yellow (e.g. Okabe-Ito's #F0E442) reads as
+low-contrast on a white background and dominates the eye disproportionately to its information
+value, so it's excluded from every palette here. Every text/background pair meets WCAG AA
+contrast (4.5:1) at the sizes used, checked by _contrast_ratio below rather than assumed.
 """
 
 from __future__ import annotations
@@ -27,15 +30,16 @@ def contrast_ratio(hex_a: str, hex_b: str) -> float:
     return max(lum_a, lum_b) / min(lum_a, lum_b)
 
 
-# Okabe-Ito: colorblind-safe, widely cited categorical palette (Okabe & Ito, 2008).
-OKABE_ITO = [
-    "#E69F00",  # orange
-    "#56B4E9",  # sky blue
-    "#009E73",  # bluish green
-    "#F0E442",  # yellow
-    "#0072B2",  # blue
-    "#D55E00",  # vermillion
-    "#CC79A7",  # reddish purple
+# Paul Tol's "vibrant" qualitative palette: colorblind-safe, no yellow. Black appended as an
+# 8th categorical slot for maximum-contrast emphasis/outlier marking.
+PROFESSIONAL_PALETTE = [
+    "#0077BB",  # blue
+    "#33BBEE",  # cyan
+    "#009988",  # teal
+    "#EE7733",  # orange
+    "#CC3311",  # red
+    "#EE3377",  # magenta
+    "#666666",  # grey
     "#000000",  # black
 ]
 
@@ -49,18 +53,16 @@ class ThemeTokens:
     foreground: str
     grid: str
     border: str
-    categorical_colors: list[str] = field(default_factory=lambda: list(OKABE_ITO))
+    categorical_colors: list[str] = field(default_factory=lambda: list(PROFESSIONAL_PALETTE))
     sequential_range: tuple[str, str] = ("#f7f7f7", "#08306b")
     diverging_range: tuple[str, str, str] = ("#b2182b", "#f7f7f7", "#2166ac")
-    positive_color: str = "#2f6b4f"
-    negative_color: str = "#b5432a"
-    headline_font: str = "Georgia, serif"
+    positive_color: str = "#0a7d3c"
+    negative_color: str = "#c1121f"
+    headline_font: str = "system-ui, sans-serif"
     body_font: str = "system-ui, sans-serif"
     editorial_suitability_score: float = 0.5
-    """Rough prior for ranking (Phase 20-002) -- how broadly applicable this theme is across
-    dataset domains, not a measured metric. Domain-specific themes (Financial, Climate, ...)
-    score lower here and would need dataset-domain matching (not built) to rank appropriately
-    for their intended use case; documented as a known limitation."""
+    """Rough prior for ranking -- how broadly applicable this theme is across dataset domains,
+    not a measured metric."""
 
 
 def _theme(**kwargs) -> ThemeTokens:
@@ -79,137 +81,92 @@ THEME_REGISTRY: dict[str, ThemeTokens] = {
     for t in [
         _theme(
             name="minimal",
-            description="Clean, restrained, maximum whitespace.",
+            description="Minimal Professional -- clean white background, maximum restraint.",
             palette_type="categorical",
             background="#ffffff",
-            foreground="#1a1815",
-            grid="#e4e0d8",
-            border="#cfc9bb",
-            editorial_suitability_score=0.9,
+            foreground="#1a1a1a",
+            grid="#e6e6e6",
+            border="#cfcfcf",
+            editorial_suitability_score=0.95,
         ),
         _theme(
-            name="classic_editorial",
-            description="Warm off-white background, serif-forward, newspaper-inspired.",
+            name="executive_neutral",
+            description="Executive Neutral -- warm neutral greys, boardroom-ready restraint.",
             palette_type="categorical",
-            background="#fbfaf8",
-            foreground="#1a1815",
-            grid="#e4e0d8",
-            border="#cfc9bb",
+            background="#faf9f7",
+            foreground="#211f1c",
+            grid="#e3e0da",
+            border="#c7c2b8",
+            categorical_colors=["#3d5a80", *PROFESSIONAL_PALETTE[1:]],
             editorial_suitability_score=0.85,
         ),
         _theme(
-            name="investigative",
-            description="High-contrast, serious, restrained accent use.",
+            name="high_contrast",
+            description="High Contrast -- maximum legibility, accessibility-first.",
             palette_type="categorical",
-            background="#f4f2ee",
-            foreground="#14130f",
-            grid="#d8d3c6",
-            border="#a89f8a",
-            categorical_colors=["#8b0000", *OKABE_ITO[:5]],
+            background="#ffffff",
+            foreground="#000000",
+            grid="#000000",
+            border="#000000",
+            categorical_colors=PROFESSIONAL_PALETTE,
+            editorial_suitability_score=0.8,
+        ),
+        _theme(
+            name="dark_data",
+            description="Dark Data -- dark background for dashboards and low-light review.",
+            palette_type="categorical",
+            background="#12161c",
+            foreground="#eef1f5",
+            grid="#2a3038",
+            border="#3a4048",
+            categorical_colors=["#4CC9F0", "#F72585", "#4EE1A0", "#F77F00", "#7B61FF", "#FFFFFF", "#94A1B2", "#EE7733"],
+            positive_color="#4EE1A0",
+            negative_color="#F72585",
             editorial_suitability_score=0.6,
         ),
         _theme(
-            name="financial",
-            description="Positive/negative-aware, precise, muted categorical accents.",
-            palette_type="diverging",
+            name="soft_corporate",
+            description="Soft Corporate -- muted, approachable tones for internal reporting.",
+            palette_type="categorical",
             background="#ffffff",
-            foreground="#0f1a2b",
-            grid="#dfe3e8",
-            border="#b9c2cc",
-            positive_color="#0a7d3c",
-            negative_color="#c1121f",
-            editorial_suitability_score=0.5,
+            foreground="#232323",
+            grid="#e9e9e9",
+            border="#d2d2d2",
+            categorical_colors=["#5B7FA6", "#7FB0A0", "#C97B63", "#8D7BAE", "#3d5a80", "#5A8F7B", "#3E3E3E", "#000000"],
+            editorial_suitability_score=0.7,
         ),
         _theme(
-            name="scientific",
-            description="Sequential-friendly, precise gridlines, cool palette.",
+            name="technical",
+            description="Technical -- precise gridlines, cool engineering palette.",
             palette_type="sequential",
             background="#ffffff",
             foreground="#101820",
             grid="#dce3e8",
             border="#aebcc7",
             sequential_range=("#eff3ff", "#08519c"),
-            editorial_suitability_score=0.5,
-        ),
-        _theme(
-            name="climate",
-            description="Diverging warm/cool for anomaly-style data.",
-            palette_type="diverging",
-            background="#ffffff",
-            foreground="#14231f",
-            grid="#dde6e2",
-            border="#a9beb6",
-            diverging_range=("#67001f", "#f7f7f7", "#053061"),
-            editorial_suitability_score=0.4,
-        ),
-        _theme(
-            name="election",
-            description="Two/multi-party categorical contrast.",
-            palette_type="categorical",
-            background="#ffffff",
-            foreground="#1a1a1a",
-            grid="#e2e2e2",
-            border="#bdbdbd",
-            categorical_colors=["#0072B2", "#D55E00", "#009E73", "#CC79A7", *OKABE_ITO],
-            editorial_suitability_score=0.3,
-        ),
-        _theme(
-            name="sports",
-            description="Energetic categorical accents, bold on white.",
-            palette_type="categorical",
-            background="#ffffff",
-            foreground="#111111",
-            grid="#e8e8e8",
-            border="#c4c4c4",
-            categorical_colors=["#0072B2", "#E69F00", "#009E73", *OKABE_ITO],
-            editorial_suitability_score=0.3,
-        ),
-        _theme(
-            name="economic",
-            description="Sober sequential/diverging for macro indicators.",
-            palette_type="sequential",
-            background="#fbfaf8",
-            foreground="#1a1815",
-            grid="#e4e0d8",
-            border="#cfc9bb",
-            sequential_range=("#fff5eb", "#7f2704"),
-            editorial_suitability_score=0.4,
-        ),
-        _theme(
-            name="monochrome",
-            description="Single-hue, emphasis via value not color.",
-            palette_type="sequential",
-            background="#ffffff",
-            foreground="#111111",
-            grid="#e5e5e5",
-            border="#bfbfbf",
-            categorical_colors=["#111111", "#3d3d3d", "#6b6b6b", "#9a9a9a", "#c4c4c4"],
-            sequential_range=("#f5f5f5", "#111111"),
             editorial_suitability_score=0.55,
         ),
         _theme(
-            name="high_contrast",
-            description="Maximum legibility, accessibility-first.",
-            palette_type="categorical",
+            name="institutional",
+            description="Institutional -- formal navy/grey, government and finance reporting.",
+            palette_type="diverging",
             background="#ffffff",
-            foreground="#000000",
-            grid="#000000",
-            border="#000000",
-            categorical_colors=OKABE_ITO,
-            editorial_suitability_score=0.7,
+            foreground="#0f1a2b",
+            grid="#dfe3e8",
+            border="#b9c2cc",
+            categorical_colors=["#1B3A5C", *PROFESSIONAL_PALETTE[1:]],
+            editorial_suitability_score=0.65,
         ),
         _theme(
-            name="dark_editorial",
-            description="Dark background, warm accent, editorial dark mode.",
+            name="cool_professional",
+            description="Cool Professional -- crisp cool-blue accents on a light neutral base.",
             palette_type="categorical",
-            background="#14130f",
-            foreground="#ece8de",
-            grid="#322e25",
-            border="#423d31",
-            categorical_colors=["#e0673f", "#56B4E9", "#6fbd94", "#F0E442", *OKABE_ITO[4:]],
-            positive_color="#6fbd94",
-            negative_color="#e0673f",
-            editorial_suitability_score=0.65,
+            background="#f7f9fb",
+            foreground="#12202e",
+            grid="#dde5ec",
+            border="#b7c4cf",
+            categorical_colors=["#0077BB", "#33BBEE", "#3d5a80", "#5B7FA6", "#009988", "#666666", "#1B3A5C", "#000000"],
+            editorial_suitability_score=0.75,
         ),
     ]
 }

@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from app.visualization.commands import VisualizationCommand
 from app.visualization.spec import VisualizationSpec
@@ -15,6 +15,10 @@ class CreateVisualizationRequest(BaseModel):
 
 class ApplyCommandRequest(BaseModel):
     command: VisualizationCommand
+
+
+class NLEditRequest(BaseModel):
+    query: str = Field(min_length=1, max_length=500)
 
 
 class VisualizationResponse(BaseModel):

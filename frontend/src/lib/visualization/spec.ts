@@ -43,6 +43,7 @@ export interface Encodings {
 export type FilterOperator = "eq" | "neq" | "gt" | "gte" | "lt" | "lte" | "in" | "not_null";
 
 export interface VizFilter {
+  id: string;
   field: string;
   operator: FilterOperator;
   value?: string | number | string[] | number[] | null;

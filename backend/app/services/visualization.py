@@ -4,9 +4,11 @@ import uuid
 
 from sqlmodel.ext.asyncio.session import AsyncSession
 
+from app.ai.base import AIProvider
 from app.models.visualization import Visualization, VisualizationVersion
 from app.repositories.dataset import DatasetColumnRepository
 from app.repositories.visualization import VisualizationRepository, VisualizationVersionRepository
+from app.services.nl_studio_edit import analyze_nl_studio_edit, to_visualization_command
 from app.visualization.commands import VisualizationCommand, apply_command
 from app.visualization.spec import VisualizationSpec
 from app.visualization.validation import ValidationResult, validate_spec
@@ -73,6 +75,7 @@ async def apply_command_to_visualization(
     visualization: Visualization,
     command: VisualizationCommand,
     created_by: str = "user",
+    change_summary: str | None = None,
 ) -> VisualizationVersion:
     version_repo = VisualizationVersionRepository(session)
     latest = await version_repo.get_latest(visualization.id)
@@ -94,7 +97,7 @@ async def apply_command_to_visualization(
             visualization_id=visualization.id,
             version_number=latest.version_number + 1,
             spec=new_spec.model_dump(mode="json"),
-            change_summary=f"Applied {command.type.value}",
+            change_summary=change_summary or f"Applied {command.type.value}",
             created_by=created_by,
         )
     )
@@ -105,8 +108,44 @@ async def apply_command_to_visualization(
     return new_version
 
 
+async def apply_nl_edit_to_visualization(
+    session: AsyncSession,
+    *,
+    visualization: Visualization,
+    provider: AIProvider,
+    query: str,
+) -> VisualizationVersion:
+    """Natural-language studio edit: Gemini translates `query` into one StudioEditCommand
+    against the visualization's current spec, which is then applied through the exact same
+    deterministic, validated path as a manual studio command -- see
+    app/services/nl_studio_edit.py for why a full spec is never trusted directly from Gemini."""
+    version_repo = VisualizationVersionRepository(session)
+    latest = await version_repo.get_latest(visualization.id)
+    if latest is None:
+        raise ValueError("Visualization has no versions")
+
+    current_spec = VisualizationSpec.model_validate(latest.spec)
+    semantic_types = await _get_column_semantic_types(
+        session, uuid.UUID(current_spec.metadata.dataset_version_id)
+    )
+
+    edit = await analyze_nl_studio_edit(
+        provider, spec=current_spec, column_semantic_types=semantic_types, query=query
+    )
+    command = to_visualization_command(edit)
+
+    return await apply_command_to_visualization(
+        session,
+        visualization=visualization,
+        command=command,
+        created_by="ai",
+        change_summary=edit.explanation,
+    )
+
+
 __all__ = [
     "VisualizationValidationError",
     "create_visualization",
     "apply_command_to_visualization",
+    "apply_nl_edit_to_visualization",
 ]
