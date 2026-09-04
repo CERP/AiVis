@@ -15,6 +15,15 @@ class InsightType(StrEnum):
     DISTRIBUTION = "distribution"
     SEASONALITY = "seasonality"
     ANOMALY = "anomaly"
+    COMPOSITION = "composition"
+    """Two categorical dimensions cross-cut by one numeric measure -- feeds stacked_bar,
+    heatmap, marimekko."""
+    HIERARCHY = "hierarchy"
+    """A nested categorical grouping (outer level -> inner level) with a numeric measure --
+    feeds treemap, sunburst, decomposition_tree."""
+    FLOW = "flow"
+    """A directed source -> target relationship with a numeric weight -- feeds sankey,
+    network, chord."""
 
 
 class Insight(TimestampedModel, table=True):

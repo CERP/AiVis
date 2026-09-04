@@ -66,15 +66,26 @@ def test_validation_rejects_unknown_chart_type() -> None:
     assert any("Unknown chart type" in e for e in result.errors)
 
 
-def test_validation_rejects_planned_but_unimplemented_chart_type() -> None:
+def test_every_registered_chart_type_is_implemented() -> None:
+    """The whole 41-type library now has a real renderer, so nothing should be sitting in the
+    registry as a not-yet-implemented placeholder. The `not implemented yet` guard in
+    validate_spec() stays in place for any future type added ahead of its renderer."""
+    from app.visualization.registry import PLANNED_CHART_TYPES
+
+    assert PLANNED_CHART_TYPES == frozenset()
+
+
+def test_treemap_now_validates_with_its_required_encodings() -> None:
     spec = VisualizationSpec(
-        chart_type="treemap",  # a real, planned chart type -- just not renderable yet
-        encoding=Encodings(x=Encoding(field="region", type=EncodingType.NOMINAL)),
+        chart_type="treemap",
+        encoding=Encodings(
+            detail=Encoding(field="region", type=EncodingType.NOMINAL),
+            size=Encoding(field="revenue", type=EncodingType.QUANTITATIVE),
+        ),
         metadata=VisualizationMetadata(dataset_id="d1", dataset_version_id="v1"),
     )
-    result = validate_spec(spec, {"region": "categorical"})
-    assert not result.is_valid
-    assert any("not implemented yet" in e for e in result.errors)
+    result = validate_spec(spec, {"region": "categorical", "revenue": "currency"})
+    assert result.is_valid, result.errors
 
 
 def test_apply_command_change_chart_type_does_not_mutate_original() -> None:

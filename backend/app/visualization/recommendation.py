@@ -28,6 +28,52 @@ _QUANTITATIVE_TYPES = {"numeric", "currency"}
 
 _SINGLE_FIELD_CHART_TYPES = {"histogram", "box_plot"}
 
+# Field-role assignment for the 3-field chart types fed by the composition/hierarchy/flow
+# detectors (app/insights/detectors.py). Each detector always returns `fields` in a fixed,
+# documented order (e.g. flow is always [source, target, value]), so the mapping here is
+# positional, not a semantic-type guess -- channel `i` gets `fields[i]`.
+_THREE_FIELD_CHANNEL_ORDER: dict[str, tuple[str, str, str]] = {
+    # composition: [category_a, category_b, value] -> x, color, y (stacked bar)
+    "stacked_bar": ("x", "color", "y"),
+    "stacked_bar_horizontal": ("y", "color", "x"),
+    "heatmap": ("x", "y", "color"),
+    "marimekko": ("x", "y", "size"),
+    # hierarchy: [outer, inner, value] -> detail, color, size
+    "treemap": ("detail", "color", "size"),
+    "sunburst": ("detail", "color", "size"),
+    "decomposition_tree": ("detail", "color", "size"),
+    # flow: [source, target, value] -> x, y, size
+    "sankey": ("x", "y", "size"),
+    "network": ("x", "y", "size"),
+    "chord": ("x", "y", "size"),
+}
+
+# Part-to-whole charts encode via color+size (a category's arc/slice), never x/y -- [category,
+# value] from a ranking Story maps directly onto that.
+_TWO_FIELD_CHANNEL_ORDER: dict[str, tuple[str, str]] = {
+    "pie": ("color", "size"),
+    "donut": ("color", "size"),
+}
+
+# Groups chart types that answer the *same* analytical question in a different skin -- these
+# collide in the redundancy filter so only one survives, matching "Bar vs Horizontal Bar vs
+# Lollipop... all showing essentially the same analytical question." pie/donut collapse into
+# each other (near-visual-duplicates) but are their own family, distinct from bar/line, since a
+# part-to-whole reading and a magnitude-ranking reading of the same two fields are genuinely
+# different questions -- both should be able to survive for the same ranking insight.
+#
+# Chart types NOT listed here default to their own chart_type as the family (via `.get(type,
+# type)` below), so they only collide with an identical chart_type -- this is what keeps
+# stacked_bar/heatmap/marimekko (same 3 fields, composition detector), treemap/sunburst/
+# decomposition_tree (same 3 fields, hierarchy detector), and sankey/network/chord (same 3
+# fields, flow detector) all distinct from their own siblings despite reading identical fields.
+_CHART_FAMILY: dict[str, str] = {
+    "bar": "bar_or_trend", "horizontal_bar": "bar_or_trend", "sorted_bar": "bar_or_trend",
+    "grouped_bar": "bar_or_trend", "waterfall": "bar_or_trend",
+    "line": "bar_or_trend", "area": "bar_or_trend", "sparkline": "bar_or_trend",
+    "pie": "part_to_whole", "donut": "part_to_whole",
+}
+
 
 @dataclass
 class VisualizationRecommendation:
@@ -77,6 +123,22 @@ def _build_spec(
         if enc_type is None:
             return None
         encoding.x = Encoding(field=field_name, type=enc_type)
+    elif len(fields) == 2 and chart_type in _TWO_FIELD_CHANNEL_ORDER:
+        # Part-to-whole charts always encode [category, value] -> color, size, regardless of
+        # which position each field arrived in -- a ranking Story's fields are already exactly
+        # this shape, so pick whichever field is quantitative as the measure.
+        encoded_types = [(f, t, _encoding_type_for(t)) for f, t in field_types]
+        if any(enc is None for _, _, enc in encoded_types):
+            return None
+        quantitative = [x for x in encoded_types if x[2] == EncodingType.QUANTITATIVE]
+        categorical = [x for x in encoded_types if x[2] != EncodingType.QUANTITATIVE]
+        if len(quantitative) != 1 or len(categorical) != 1:
+            return None  # part-to-whole needs exactly one category and one measure
+        category_field, _, category_enc = categorical[0]
+        measure_field, _, measure_enc = quantitative[0]
+
+        encoding.color = Encoding(field=category_field, type=category_enc)
+        encoding.size = Encoding(field=measure_field, type=measure_enc, aggregation="sum")
     elif len(fields) == 2:
         (field_a, type_a), (field_b, type_b) = field_types
         enc_a = _encoding_type_for(type_a)
@@ -104,6 +166,23 @@ def _build_spec(
         aggregation = "sum" if is_aggregatable else "none"
         encoding.x = Encoding(field=x_field, type=x_type)
         encoding.y = Encoding(field=y_field, type=y_type, aggregation=aggregation)
+    elif len(fields) == 3:
+        channel_order = _THREE_FIELD_CHANNEL_ORDER.get(chart_type)
+        if channel_order is None:
+            return None  # chart type has no known positional mapping for a 3-field Story
+
+        for channel, (field_name, semantic_type) in zip(channel_order, field_types, strict=True):
+            enc_type = _encoding_type_for(semantic_type)
+            if enc_type is None:
+                return None
+            # The numeric measure (always last in the detector's fixed field order) gets summed
+            # -- it's the thing being cross-tabulated/flowed/nested, matching how the
+            # composition/hierarchy/flow detectors computed their own headline numbers.
+            aggregation = "sum" if enc_type == EncodingType.QUANTITATIVE else "none"
+            setattr(
+                encoding, channel,
+                Encoding(field=field_name, type=enc_type, aggregation=aggregation),
+            )
     else:
         return None
 
@@ -118,20 +197,29 @@ def _build_spec(
 
 
 def _redundancy_key(spec: VisualizationSpec) -> tuple:
-    """Keyed on field-set alone, not chart_type: a bar chart and a line chart over the same two
-    fields answer the same analytical question, so they're redundant regardless of mark type
-    (per the "Bar vs Horizontal Bar vs Lollipop" guidance -- avoid near-duplicate candidates)."""
+    """Keyed on (chart family, full field-set): a bar chart and a line chart over the same two
+    fields answer the same analytical question, so orientation/mark-only variants within a
+    family collide (per the "Bar vs Horizontal Bar vs Lollipop" guidance). Chart types *not*
+    grouped into a family (stacked_bar/heatmap/marimekko, treemap/sunburst/decomposition_tree,
+    sankey/network/chord) stay distinct even when they read the same fields, because they
+    emphasize genuinely different things -- a heatmap's intensity pattern and a stacked bar's
+    absolute-value breakdown are not "the same chart in a different skin."
+
+    Every set channel is considered, not just x/y -- a 3-field spec built from the
+    hierarchy/flow detectors mostly uses detail/color/size, so an x/y-only key would collapse
+    every one of them to the same empty key and wrongly dedupe unrelated specs."""
     fields = tuple(
         sorted(
-            f
-            for f in (
-                spec.encoding.x.field if spec.encoding.x else None,
-                spec.encoding.y.field if spec.encoding.y else None,
+            enc.field
+            for enc in (
+                spec.encoding.x, spec.encoding.y, spec.encoding.color,
+                spec.encoding.size, spec.encoding.detail,
             )
-            if f
+            if enc is not None
         )
     )
-    return fields
+    family = _CHART_FAMILY.get(spec.chart_type, spec.chart_type)
+    return (family, fields)
 
 
 def generate_recommendations(

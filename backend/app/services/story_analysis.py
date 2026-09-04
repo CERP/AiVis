@@ -16,11 +16,11 @@ async def generate_stories_for_version(
 
     story_repo = StoryRepository(session)
     saved: list[Story] = []
-    for insight, candidate in zip(insights, candidates, strict=True):
+    for candidate in candidates:
         story = await story_repo.create(
             Story(
                 dataset_version_id=version.id,
-                insight_id=insight.id,
+                insight_id=candidate.insight_id,
                 title=candidate.title,
                 description=candidate.description,
                 analytical_question=candidate.analytical_question,

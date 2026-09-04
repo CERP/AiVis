@@ -1185,65 +1185,91 @@ recommendations → data quality), not just code-inspected.
 
 ---
 
-## Phase 36 — 41-Type Visualization Library
+## Phase 36 — 41-Type Visualization Library (COMPLETE: 41/41)
 
-Full audit + partial implementation against the 41-chart-type requirement. Scope decision stated
-upfront and in `aivis-visualization-library-verification.md`: full correct implementations of
-every type need dependencies (`d3-force`, `d3-sankey`, `d3-hierarchy`, `topojson`, a KDE library)
-not currently installed, and per the requirement's own "mathematically/visually incorrect = not
-implemented" rule, nothing was faked to inflate the count.
+All 41 required visualization types are implemented, registry-declared, compatibility-validated
+and **live-rendered**. Full evidence in `aivis-visualization-library-verification.md`.
 
-### P36-001 — Full 41-type registry (backend + frontend)
+### P36-000 — Correction to the initial audit
+
+- [x] The first pass of this phase reported 23 types BLOCKED on "missing dependencies". That was
+  factually wrong: `d3` v7 is a bundle already shipping `d3-hierarchy`, `d3-force`, `d3-chord`,
+  `d3-geo`, `d3-geo-projection`, `d3-shape`, and `topojson-client` was already present
+  transitively. Only `d3-sankey` and `world-atlas` were genuinely absent; both installed.
+  Nothing was blocked by a real capability gap.
+
+### P36-001 — Full 42-entry registry (backend + frontend)
 
 - [x] `app/visualization/registry.py` + `frontend/src/lib/visualization/registry.ts` — 42 entries
-  (the 41 required + pre-existing `grouped_bar`), each with id/category/subcategory/description/
-  required+optional encodings/supported field types/min data points/max cardinality/supported
-  aggregations/temporal-geographic-hierarchical-relational-OHLC flags/renderer/`implemented`/
-  `blockedReason`. `bar`="Column Chart"(#1), `stacked_bar`="Stacked Column"(#2),
-  `horizontal_bar`="Bar Chart"(#3, new), `stacked_bar_horizontal`="Stacked Bar"(#18, new).
-- Acceptance: `IMPLEMENTED_CHART_TYPES`/`ALL_KNOWN_CHART_TYPES` importable, counts verified
-  (42 total, 18 of the required 41 implemented).
+  (41 required + pre-existing `grouped_bar`), each carrying id/label/category/subcategory/
+  description/required+optional encodings/supported field types/min data points/max cardinality/
+  supported aggregations/temporal-geographic-hierarchical-relational-OHLC flags/renderer engine.
+  `PLANNED_CHART_TYPES` is now empty.
 
-### P36-002 — 8 new genuinely-correct chart renderers
+### P36-002 — Canonical VisualizationSpec extended (not forked)
 
-- [x] `to-vega-lite.ts`: `horizontal_bar`/`stacked_bar_horizontal` (real x/y channel swap),
-  `sorted_bar` (explicit sort direction), `waterfall` (real Vega-Lite window-transform running
-  cumulative total, not a client-side approximation), `pie` (arc, innerRadius 0 vs donut's 60),
-  `heatmap` (rect + quantitative color), `bubble` (point + size, already area-proportional by
-  Vega-Lite default), `sparkline` (line, axes hidden). New components: `KPICard` (real
-  sum/mean/median/count/min/max aggregation + real period-over-period comparison from actual row
-  data, never fabricated), `DataTable` (real client-side sort/pagination over real rows).
-- **Bug found and fixed via live testing**: `config.range: undefined` (an explicit key, not an
-  omitted one) wiped Vega's built-in named color-scheme table (`category`/`heatmap`/`diverging`)
-  whenever no theme was supplied, breaking every chart with a color encoding. Affected 4 of the
-  12 new chart types on first live check (`/studio-preview`); fixed by conditionally spreading
-  the `range` key instead of always including it with a possibly-undefined value.
-- Acceptance: 9 new frontend unit tests (`to-vega-lite.test.ts`), 5 new KPICard tests — all
-  passing; live re-verification at `/studio-preview` after the fix — 12/12 chart specs render
-  with zero errors.
+- [x] Added `x2`/`y2` (range channels, for Gantt), `measure2` (dual-axis second measure, for
+  line-and-column and gauge targets), and `open`/`high`/`low`/`close` (OHLC) to `Encodings` on
+  both the Pydantic and TypeScript sides. All 41 types still resolve through the one canonical
+  spec — no parallel data format was introduced.
 
-### P36-003 — Compatibility engine + AI context wiring
+### P36-003 — Vega-Lite builder registry (9 types)
 
-- [x] `app/visualization/validation.py::REQUIRED_ENCODINGS` — every implemented chart type's
-  required encoding channels checked before a spec is valid (heatmap without color, bubble
-  without size, KPI without a measure all rejected with a specific error). AI findings' chart-type
-  prompt list (`app/services/ai_findings.py::_SUPPORTED_CHART_TYPES`) now generated from
-  `IMPLEMENTED_CHART_TYPES` directly instead of a hand-maintained duplicate. Recommendation engine
-  extended to auto-generate `horizontal_bar`/`sorted_bar`/`waterfall`/`sparkline` candidates from
-  2-field Stories (3-encoding types like `stacked_bar`/`heatmap`/`bubble` remain manual-studio-only
-  since the deterministic Story pipeline only ever carries a field pair).
-- Acceptance: 7 new compatibility-engine unit tests, 4 new recommendation-generation unit tests,
-  full backend suite still green (125/125) after wiring.
+- [x] `frontend/src/lib/visualization/vega-builders.ts` — keyed builders (never a central
+  conditional) for lollipop, bullet, bump, ribbon, marimekko, gantt, candlestick, ohlc,
+  line_column. Correctness highlights: bump uses a real `window: rank` partitioned by period;
+  marimekko computes true variable-width/height cell rectangles so area encodes joint proportion;
+  candlestick and OHLC are separate builders because the geometry genuinely differs.
 
-### P36-004 — Verification matrix + honest accounting
+### P36-004 — D3 renderers (14 types)
 
-- [x] `aivis-visualization-library-verification.md` — all 41 required rows, 18 PASS (verified via
-  unit test + live zero-error render), 23 BLOCKED with the specific missing dependency or schema
-  gap named per row (not a vague "not implemented"). No row claims PASS without both a passing
-  test and a live render check backing it.
-- Final count: **18/41 implemented and verified**, 0 failing, 23 blocked on real, named
-  dependency/schema gaps (D3 layout libraries, geo/topojson, OHLC/dual-measure/date-range schema
-  extensions, KDE) — not attempted with a fake/incorrect implementation to inflate the number.
+- [x] `components/visualization/d3/` — hierarchy (treemap squarified tiling, sunburst partition,
+  decomposition tree), relational (d3-force network with deterministic 300-tick run, d3-chord,
+  d3-sankey with DFS cycle removal), statistical (violin with real Gaussian KDE + Silverman
+  bandwidth, funnel as true trapezoids, gauge arc, radar with per-axis normalisation), geo
+  (choropleth on Natural Earth 110m topojson, bubble map, flow map with great-circle
+  `geoInterpolate` arcs). Pure maths factored into `lib/visualization/d3-data.ts`.
+
+### P36-005 — Component renderers (3 types)
+
+- [x] KPI card (real aggregation + genuine period-over-period delta, never fabricated), data
+  table (sort + pagination), matrix (real pivot/cross-tab with row/column/grand subtotals; `mean`
+  subtotals recomputed from underlying values rather than averaging cell averages).
+
+### P36-006 — Compatibility engine + AI wiring
+
+- [x] `validation.py::REQUIRED_ENCODINGS` covers all 42 types; `_CHANNEL_GROUPS` enforces that
+  OHLC's four channels are set together or not at all. `_SUPPORTED_CHART_TYPES` in
+  `ai_findings.py` is generated from `IMPLEMENTED_CHART_TYPES`, so Gemini is only ever told about
+  renderable types — and `validate_spec()` still rejects invalid output regardless.
+
+### P36-007 — Hardened AI findings system prompt
+
+- [x] `ai_findings.py::_SYSTEM_INSTRUCTION` rewritten into a structured contract: explicit input
+  description, task scope, seven grounding rules (exact field names only, respect declared types,
+  no unreadable numeric claims, association≠causation caveats, prefer few checkable findings),
+  registry-driven chart selection, sensitivity guidance, an explicit untrusted-content clause
+  treating all JSON string values as data rather than instructions, and a strict output contract.
+
+### P36-008 — Live verification
+
+- [x] `/chart-gallery` renders all 42 registry entries from fixture data shaped per chart family
+  (categorical, time series, ranked-over-time, OHLC, waterfall, funnel stages, flows, hierarchy,
+  distribution, tasks, countries, cities, routes, radar metrics). DOM-inspected result: **42
+  cards, 48 SVGs, 2 tables, 0 errors** — no placeholder or "unsupported" state on any card.
+  Programmatic cross-check confirms all 42 registry ids resolve to exactly one render path.
+- Full suite: backend **126 passed**, frontend **30 passed**, `tsc`/`eslint`/`ruff` all clean.
+
+### P36-009 — Remaining follow-up (documented, not hidden)
+
+- [ ] Export path for the 14 non-Vega charts — they render correctly but aren't Vega views, so
+  the existing `View.toSVG()`-based export button doesn't capture them. Needs a DOM/SVG
+  serialiser branch.
+- [ ] AI auto-recommendation for 3+ encoding chart types — the deterministic Story pipeline
+  carries a field *pair*, so these are studio-only rather than auto-suggested. Needs a
+  multi-field Story path, not renderer work.
+- [ ] Per-type maths unit tests (KDE output shape, sankey link widths, pivot subtotals). The pure
+  functions were deliberately factored into `lib/visualization/d3-data.ts` to make this easy.
 
 ---
 

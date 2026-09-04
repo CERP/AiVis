@@ -114,15 +114,27 @@ async def test_full_pipeline_produces_validated_recommendations(
 
         for rec in recs["top"]:
             assert rec["spec"]["chart_type"]
-            assert rec["spec"]["encoding"]["x"] is not None
+            # Every implemented chart type sets at least one encoding channel -- which channel
+            # depends on the chart family (x/y for magnitude/trend charts, color/size for
+            # part-to-whole charts like pie/donut), so this checks "some encoding exists" rather
+            # than assuming x/y specifically.
+            assert any(rec["spec"]["encoding"].get(ch) for ch in ("x", "y", "color", "size", "detail"))
             assert 0.0 <= rec["confidence"] <= 1.0
 
-        # no two recommendations should target the exact same field-set (redundancy filtering)
+        # no two recommendations should target the exact same (chart_type, field-set) --
+        # redundancy filtering collapses near-duplicates within a family but chart types in
+        # different families (e.g. bar vs donut) may legitimately share a field-set.
         all_recs = recs["top"] + recs["derived"]
         keys = {
             (
-                r["spec"]["encoding"]["x"]["field"],
-                (r["spec"]["encoding"]["y"] or {}).get("field"),
+                r["spec"]["chart_type"],
+                tuple(
+                    sorted(
+                        enc["field"]
+                        for ch in ("x", "y", "color", "size", "detail")
+                        if (enc := r["spec"]["encoding"].get(ch))
+                    )
+                ),
             )
             for r in all_recs
         }

@@ -12,6 +12,15 @@ import polars as pl
 
 _CORRELATION_THRESHOLD = 0.5
 _MIN_ROWS_FOR_TREND = 3
+_MIN_CELLS_FOR_COMPOSITION = 4
+_MAX_CATEGORICAL_CARDINALITY_FOR_MULTIFIELD = 20
+
+# Column-name hints for directed source/target pairs -- same heuristic-by-name pattern already
+# used for PII (profiler.py::_PII_NAME_HINTS) and geographic (profiler.py::_GEO_NAME_HINTS)
+# detection. There is no semantic type for "this pair of columns represents a directed edge",
+# so name hints are the only deterministic signal available short of asking an LLM to guess.
+_SOURCE_NAME_HINTS = {"source", "from", "origin", "sender", "referrer", "start"}
+_TARGET_NAME_HINTS = {"target", "to", "destination", "dest", "receiver", "end"}
 
 
 @dataclass
@@ -157,6 +166,173 @@ def detect_relationship(
         fields=[col_a, col_b],
         calculation={"metric": "pearson_correlation", "r": round(corr, 3)},
         confidence=min(0.95, abs(corr)),
+    )
+
+
+def detect_composition(
+    df: pl.DataFrame, category_a: str, category_b: str, value_col: str
+) -> InsightCandidate | None:
+    """Two categorical dimensions cross-cut by one numeric measure -- e.g. revenue by region and
+    product. Feeds stacked_bar/heatmap/marimekko, which all need exactly this shape (two
+    dimensions + one measure). Only fires when both dimensions have a workable cardinality and
+    the cross-tab actually has more than one populated cell -- a 1x1 or 1xN cross-tab isn't a
+    genuine composition, it's a plain ranking (already covered by detect_ranking)."""
+    subset = df.select([category_a, category_b, value_col]).drop_nulls()
+    if subset.height == 0:
+        return None
+
+    n_a = subset[category_a].n_unique()
+    n_b = subset[category_b].n_unique()
+    if n_a < 2 or n_b < 2:
+        return None
+    max_cardinality = _MAX_CATEGORICAL_CARDINALITY_FOR_MULTIFIELD
+    if n_a > max_cardinality or n_b > max_cardinality:
+        return None
+
+    grouped = subset.group_by([category_a, category_b]).agg(pl.col(value_col).sum().alias("total"))
+    if grouped.height < _MIN_CELLS_FOR_COMPOSITION:
+        return None
+
+    top = grouped.sort("total", descending=True).row(0, named=True)
+    grand_total = grouped["total"].sum()
+    top_share = (top["total"] / grand_total * 100) if grand_total else 0
+
+    return InsightCandidate(
+        type="composition",
+        title=(
+            f"{value_col.replace('_', ' ').title()} breaks down across "
+            f"{category_a.replace('_', ' ')} and {category_b.replace('_', ' ')}"
+        ),
+        description=(
+            f"{n_a} {category_a.replace('_', ' ')} values x {n_b} {category_b.replace('_', ' ')} "
+            f"values compose {value_col.replace('_', ' ')} -- the largest single combination is "
+            f"{top[category_a]} / {top[category_b]} at {top['total']:.2f} "
+            f"({top_share:.1f}% of the total)."
+        ),
+        fields=[category_a, category_b, value_col],
+        calculation={
+            "metric": "cross_tab_sum",
+            "cells_populated": grouped.height,
+            "top_combination": [top[category_a], top[category_b]],
+            "top_value": top["total"],
+            "top_share_pct": round(top_share, 2),
+        },
+        confidence=0.7,
+    )
+
+
+def detect_hierarchy(
+    df: pl.DataFrame, outer_col: str, inner_col: str, value_col: str
+) -> InsightCandidate | None:
+    """A genuinely nested categorical grouping -- e.g. department -> category -- rather than two
+    independent dimensions. Verified deterministically: an inner value must belong to exactly one
+    outer value for the vast majority of cases (>=80%), otherwise the pair is a composition, not
+    a hierarchy, and detect_composition already covers that shape. Feeds treemap/sunburst/
+    decomposition_tree."""
+    subset = df.select([outer_col, inner_col, value_col]).drop_nulls()
+    if subset.height == 0:
+        return None
+
+    n_outer = subset[outer_col].n_unique()
+    n_inner = subset[inner_col].n_unique()
+    if n_outer < 2 or n_inner < 2:
+        return None
+    max_cardinality = _MAX_CATEGORICAL_CARDINALITY_FOR_MULTIFIELD
+    if n_outer > max_cardinality or n_inner > max_cardinality:
+        return None
+
+    pairs = subset.select([outer_col, inner_col]).unique()
+    outer_counts_per_inner = pairs.group_by(inner_col).agg(
+        pl.col(outer_col).n_unique().alias("n_outer")
+    )
+    nested_ratio = (outer_counts_per_inner["n_outer"] == 1).sum() / outer_counts_per_inner.height
+    if nested_ratio < 0.8:
+        return None
+
+    grouped = subset.group_by(outer_col).agg(pl.col(value_col).sum().alias("total")).sort(
+        "total", descending=True
+    )
+    top = grouped.row(0, named=True)
+    grand_total = grouped["total"].sum()
+    top_share = (top["total"] / grand_total * 100) if grand_total else 0
+
+    return InsightCandidate(
+        type="hierarchy",
+        title=(
+            f"{value_col.replace('_', ' ').title()} breaks down by "
+            f"{outer_col.replace('_', ' ')} and {inner_col.replace('_', ' ')}"
+        ),
+        description=(
+            f"{n_inner} {inner_col.replace('_', ' ')} values nest within {n_outer} "
+            f"{outer_col.replace('_', ' ')} values. {top[outer_col]} leads with "
+            f"{top['total']:.2f} ({top_share:.1f}% of the total {value_col.replace('_', ' ')})."
+        ),
+        fields=[outer_col, inner_col, value_col],
+        calculation={
+            "metric": "nested_group_sum",
+            "nested_ratio": round(nested_ratio, 3),
+            "top_outer": top[outer_col],
+            "top_value": top["total"],
+            "top_share_pct": round(top_share, 2),
+        },
+        confidence=0.7,
+    )
+
+
+def looks_like_flow_pair(name_a: str, name_b: str) -> tuple[str, str] | None:
+    """Returns (source_col, target_col) if the pair's names suggest a directed edge, else None.
+    Name-hint heuristic, same pattern as PII/geographic detection in profiler.py -- there is no
+    semantic type for "directed relationship," so column naming is the only deterministic signal
+    available without asking an LLM to guess at the data's meaning."""
+    a, b = name_a.lower(), name_b.lower()
+    a_is_source = any(hint in a for hint in _SOURCE_NAME_HINTS)
+    b_is_target = any(hint in b for hint in _TARGET_NAME_HINTS)
+    if a_is_source and b_is_target:
+        return name_a, name_b
+    b_is_source = any(hint in b for hint in _SOURCE_NAME_HINTS)
+    a_is_target = any(hint in a for hint in _TARGET_NAME_HINTS)
+    if b_is_source and a_is_target:
+        return name_b, name_a
+    return None
+
+
+def detect_flow(
+    df: pl.DataFrame, source_col: str, target_col: str, value_col: str
+) -> InsightCandidate | None:
+    """A directed source -> target relationship with a numeric weight -- e.g. traffic source ->
+    landing page, with session count. Feeds sankey/network/chord. Only called for column pairs
+    that `looks_like_flow_pair` already identified by name, so this function's job is purely the
+    statistical side: is there enough real flow structure to be worth visualizing."""
+    subset = df.select([source_col, target_col, value_col]).drop_nulls()
+    if subset.height == 0:
+        return None
+
+    n_edges = subset.select([source_col, target_col]).unique().height
+    if n_edges < 2:
+        return None
+
+    grouped = subset.group_by([source_col, target_col]).agg(pl.col(value_col).sum().alias("total"))
+    top = grouped.sort("total", descending=True).row(0, named=True)
+    grand_total = grouped["total"].sum()
+    top_share = (top["total"] / grand_total * 100) if grand_total else 0
+
+    return InsightCandidate(
+        type="flow",
+        title=f"{source_col.replace('_', ' ').title()} flows into {target_col.replace('_', ' ')}",
+        description=(
+            f"{n_edges} distinct {source_col.replace('_', ' ')} → {target_col.replace('_', ' ')} "
+            f"flows found. The strongest is {top[source_col]} → {top[target_col]} at "
+            f"{top['total']:.2f} ({top_share:.1f}% of total {value_col.replace('_', ' ')})."
+        ),
+        fields=[source_col, target_col, value_col],
+        calculation={
+            "metric": "directed_edge_sum",
+            "edge_count": n_edges,
+            "top_edge": [top[source_col], top[target_col]],
+            "top_value": top["total"],
+            "top_share_pct": round(top_share, 2),
+        },
+        confidence=0.65,
     )
 
 

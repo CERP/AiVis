@@ -50,7 +50,7 @@ REQUIRED_ENCODINGS: dict[str, tuple[str, ...]] = {
     "network": ("x", "y", "size"),
     "chord": ("x", "y", "size"),
     "sankey": ("x", "y", "size"),
-    "flow_map": ("x", "y", "size"),
+    "flow_map": ("x", "y", "x2", "y2", "size"),
     "violin": ("x", "y"),
     "funnel": ("x", "y"),
     "gauge": ("size",),
