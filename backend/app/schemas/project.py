@@ -9,6 +9,11 @@ class ProjectCreateRequest(BaseModel):
     description: str | None = Field(default=None, max_length=2000)
 
 
+class ProjectUpdateRequest(BaseModel):
+    name: str = Field(min_length=1, max_length=200)
+    description: str | None = Field(default=None, max_length=2000)
+
+
 class ProjectResponse(BaseModel):
     id: uuid.UUID
     organization_id: uuid.UUID

@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from concurrent.futures import ThreadPoolExecutor
+from functools import partial
 from typing import TypeVar
 
 from google import genai
@@ -50,7 +52,7 @@ class GeminiProvider(AIProvider):
             try:
                 # The SDK's generate_content is a blocking network call -- run it off the event
                 # loop so FastAPI can keep serving other requests while Gemini responds.
-                response = await asyncio.to_thread(
+                call = partial(
                     self._client.models.generate_content,
                     model=self._model,
                     contents=prompt,
@@ -62,12 +64,20 @@ class GeminiProvider(AIProvider):
                         max_output_tokens=_MAX_OUTPUT_TOKENS,
                     ),
                 )
+                # A short-lived executor avoids retaining SDK worker threads on the event
+                # loop, which otherwise stalls graceful shutdown in workers and test runs.
+                with ThreadPoolExecutor(max_workers=1) as executor:
+                    response = await asyncio.get_running_loop().run_in_executor(executor, call)
             except Exception as exc:  # noqa: BLE001 — any SDK/network failure is provider-level
                 logger.debug("gemini request failed: %r", exc)
                 last_error = exc
                 continue
 
-            logger.debug("gemini raw response schema=%s body=%s", response_schema.__name__, response.text)
+            logger.debug(
+                "gemini raw response schema=%s body=%s",
+                response_schema.__name__,
+                response.text,
+            )
 
             if response.text is None:
                 last_error = AIProviderError("Empty response from Gemini")

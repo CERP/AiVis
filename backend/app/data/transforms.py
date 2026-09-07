@@ -108,7 +108,12 @@ def parse_dates(series: pl.Series) -> TransformResult:
 def normalize_percentage(series: pl.Series) -> TransformResult:
     """Converts '50%' or 0-100 numeric scale to a 0-1 float. Already-fractional values
     (<=1) are left as-is."""
-    numeric_result = coerce_numeric(series)
+    source = (
+        series.cast(pl.Utf8).str.strip_chars().str.strip_suffix("%")
+        if series.dtype == pl.Utf8
+        else series
+    )
+    numeric_result = coerce_numeric(source)
     normalized = numeric_result.series.map_elements(
         lambda v: (v / 100.0 if v is not None and v > 1 else v),
         return_dtype=pl.Float64,

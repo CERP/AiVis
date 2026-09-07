@@ -2,6 +2,7 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { motion } from "framer-motion";
+import { Pencil, Trash2 } from "lucide-react";
 import Link from "next/link";
 import { useState } from "react";
 
@@ -23,6 +24,8 @@ interface Project {
 export default function ProjectsPage() {
   const queryClient = useQueryClient();
   const [newProjectName, setNewProjectName] = useState("");
+  const [editingProject, setEditingProject] = useState<Project | null>(null);
+  const [editNameInput, setEditNameInput] = useState("");
 
   const { data, isLoading, isError } = useQuery({
     queryKey: ["projects"],
@@ -33,6 +36,23 @@ export default function ProjectsPage() {
     mutationFn: (name: string) => apiClient.post<Project>("/api/projects", { name }),
     onSuccess: () => {
       setNewProjectName("");
+      queryClient.invalidateQueries({ queryKey: ["projects"] });
+    },
+  });
+
+  const updateProjectMutation = useMutation({
+    mutationFn: ({ id, name }: { id: string; name: string }) =>
+      apiClient.patch<Project>(`/api/projects/${id}`, { name }),
+    onSuccess: () => {
+      setEditingProject(null);
+      setEditNameInput("");
+      queryClient.invalidateQueries({ queryKey: ["projects"] });
+    },
+  });
+
+  const deleteProjectMutation = useMutation({
+    mutationFn: (id: string) => apiClient.delete<void>(`/api/projects/${id}`),
+    onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["projects"] });
     },
   });
@@ -98,26 +118,102 @@ export default function ProjectsPage() {
           <ul className="flex flex-col gap-2.5">
             {data.map((project) => (
               <motion.li key={project.id} whileHover={{ x: 2 }}>
-                <Link
-                  href={`/projects/${project.id}`}
-                  className="flex items-center gap-4 rounded-xl border border-border bg-surface px-5 py-[18px] hover:border-border-strong"
-                >
-                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-[10px] bg-accent-muted font-headline text-[15px] font-bold text-accent-hover">
-                    {project.name.charAt(0).toUpperCase()}
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <div className="truncate text-[15px] font-semibold">{project.name}</div>
-                    <div className="mt-0.5 text-[12.5px] text-subtle-foreground">
-                      {project.dataset_count} dataset{project.dataset_count === 1 ? "" : "s"} ·
-                      updated {relativeTime(project.updated_at)}
+                <div className="relative group">
+                  <Link
+                    href={`/projects/${project.id}`}
+                    className="flex items-center gap-4 rounded-xl border border-border bg-surface px-5 py-[18px] hover:border-border-strong pr-24"
+                  >
+                    <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-[10px] bg-accent-muted font-headline text-[15px] font-bold text-accent-hover">
+                      {project.name.charAt(0).toUpperCase()}
                     </div>
-                  </div>
-                </Link>
+                    <div className="min-w-0 flex-1">
+                      <div className="truncate text-[15px] font-semibold">{project.name}</div>
+                      <div className="mt-0.5 text-[12.5px] text-subtle-foreground">
+                        {project.dataset_count} dataset{project.dataset_count === 1 ? "" : "s"} ·
+                        updated {relativeTime(project.updated_at)}
+                      </div>
+                    </div>
+                  </Link>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="absolute right-12 top-1/2 -translate-y-1/2 h-8 w-8 p-0 text-muted-foreground hover:text-accent z-10 transition-colors"
+                    disabled={deleteProjectMutation.isPending || updateProjectMutation.isPending}
+                    onClick={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      setEditingProject(project);
+                      setEditNameInput(project.name);
+                    }}
+                  >
+                    <Pencil className="h-4 w-4" />
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="absolute right-4 top-1/2 -translate-y-1/2 h-8 w-8 p-0 text-muted-foreground hover:text-negative z-10 transition-colors"
+                    disabled={deleteProjectMutation.isPending || updateProjectMutation.isPending}
+                    onClick={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      if (confirm(`Are you sure you want to delete the project "${project.name}" and all of its datasets?`)) {
+                        deleteProjectMutation.mutate(project.id);
+                      }
+                    }}
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </Button>
+                </div>
               </motion.li>
             ))}
           </ul>
         )}
       </section>
+
+      {editingProject && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+          <form
+            className="bg-surface border border-border rounded-xl shadow-2xl p-6 max-w-md w-full animate-in fade-in zoom-in duration-200"
+            onSubmit={(e) => {
+              e.preventDefault();
+              if (editNameInput.trim()) {
+                updateProjectMutation.mutate({ id: editingProject.id, name: editNameInput.trim() });
+              }
+            }}
+          >
+            <h3 className="text-[18px] font-bold text-foreground mb-3">
+              Rename project
+            </h3>
+            <p className="text-[14px] text-muted-foreground mb-4">
+              Enter a new name for your project:
+            </p>
+            <Input
+              className="w-full mb-6"
+              placeholder="Project name"
+              value={editNameInput}
+              onChange={(e) => setEditNameInput(e.target.value)}
+            />
+            <div className="flex items-center justify-end gap-3">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setEditingProject(null)}
+                className="text-[13.5px] font-medium"
+              >
+                Cancel
+              </Button>
+              <Button
+                type="submit"
+                variant="accent"
+                disabled={updateProjectMutation.isPending}
+                className="text-[13.5px] font-semibold"
+              >
+                Save
+              </Button>
+            </div>
+          </form>
+        </div>
+      )}
     </AppShell>
   );
 }

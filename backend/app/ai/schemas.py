@@ -2,6 +2,7 @@
 unvalidatable output is rejected, never coerced or executed."""
 
 from enum import StrEnum
+from typing import Any
 
 from pydantic import BaseModel, Field
 
@@ -98,3 +99,36 @@ class StudioEditCommand(BaseModel):
     theme: str | None = Field(default=None, max_length=50)
     sort_descending: bool = False
     explanation: str = Field(max_length=300)
+
+
+class DatasetQualityStatus(StrEnum):
+    HEALTHY = "healthy"
+    USABLE_WITH_MINOR_ISSUES = "usable_with_minor_issues"
+    REQUIRES_CLEANING = "requires_cleaning"
+    UNSUITABLE = "unsuitable"
+
+
+class DynamicTransformStep(BaseModel):
+    column_name: str | None = None
+    action_type: str
+    reason: str = Field(min_length=1, max_length=500)
+    params: dict[str, Any] = Field(default_factory=dict)
+
+
+class DatasetAnomaly(BaseModel):
+    column_name: str | None = None
+    row_index: int | None = None
+    value: Any | None = None
+    issue_type: str  # e.g., "missing", "malformed", "outlier", "type_mismatch"
+    description: str
+
+
+class DatasetAuditReport(BaseModel):
+    dataset_status: DatasetQualityStatus
+    data_quality_score_before: int = Field(ge=0, le=100)
+    data_quality_score_after: int | None = Field(default=None, ge=0, le=100)
+    anomalies: list[DatasetAnomaly] = Field(default_factory=list)
+    cleaning_recipe: list[DynamicTransformStep] = Field(default_factory=list)
+    cleaned_rows: list[dict[str, Any]] = Field(default_factory=list)
+    remaining_issues: list[DatasetAnomaly] = Field(default_factory=list)
+    cleaning_summary: list[str] = Field(default_factory=list)

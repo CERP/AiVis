@@ -33,7 +33,17 @@ from app.schemas.insight import InsightResponse
 from app.schemas.profile import ColumnProfileResponse, DatasetProfileResponse
 from app.schemas.rows import DatasetRowsResponse
 from app.schemas.story import StoryResponse
-from app.services.cleaning import CleaningError, apply_cleaning_operation, preview_cleaning_operation
+from app.schemas.workflow import (
+    ValidationWorkflowResponse,
+    WorkflowPreview,
+    WorkflowSelectionRequest,
+    WorkflowSelectionResponse,
+)
+from app.services.cleaning import (
+    CleaningError,
+    apply_cleaning_operation,
+    preview_cleaning_operation,
+)
 from app.services.ingestion import ingest_dataset
 from app.services.storage import get_storage_service
 
@@ -376,6 +386,7 @@ async def list_stories(
 async def get_dataset_rows(
     dataset_id: uuid.UUID,
     limit: int = 500,
+    version_id: uuid.UUID | None = None,
     organization_id: uuid.UUID = Depends(get_current_organization_id),
     session: AsyncSession = Depends(get_session),
 ) -> DatasetRowsResponse:
@@ -386,8 +397,15 @@ async def get_dataset_rows(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Dataset not found")
     await _require_project(dataset.project_id, organization_id, session)
 
-    version = await DatasetVersionRepository(session).get_latest(dataset_id)
+    version_repo = DatasetVersionRepository(session)
+    version = (
+        await version_repo.get(version_id)
+        if version_id
+        else await version_repo.get_latest(dataset_id)
+    )
     if version is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No dataset version")
+    if version.dataset_id != dataset_id:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No dataset version")
 
     capped_limit = min(max(limit, 1), 2000)
@@ -403,6 +421,177 @@ async def get_dataset_rows(
     )
 
 
+@router.get("/{dataset_id}/validation-workflow", response_model=ValidationWorkflowResponse)
+async def get_validation_workflow(
+    dataset_id: uuid.UUID,
+    limit: int = 100,
+    organization_id: uuid.UUID = Depends(get_current_organization_id),
+    session: AsyncSession = Depends(get_session),
+) -> ValidationWorkflowResponse:
+    dataset = await DatasetRepository(session).get(dataset_id)
+    if dataset is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Dataset not found")
+    await _require_project(dataset.project_id, organization_id, session)
+
+    from app.ai.base import AIProviderError
+    from app.ai.schemas import DatasetAuditReport
+    from app.services.validation_workflow import WorkflowValidationError, get_or_create_audit
+
+    try:
+        audit = await get_or_create_audit(session, dataset_id, limit)
+        report = DatasetAuditReport.model_validate(audit.report)
+        return ValidationWorkflowResponse(
+            audit_id=audit.id,
+            source_version_id=audit.source_version_id,
+            cleaned_version_id=audit.cleaned_version_id,
+            workflow_status=audit.status,
+            dataset_status=report.dataset_status,
+            data_quality_score_before=report.data_quality_score_before,
+            data_quality_score_after=report.data_quality_score_after,
+            columns=audit.preview.get("columns", []),
+            before=WorkflowPreview(rows=audit.preview.get("before_rows", [])),
+            after=WorkflowPreview(rows=audit.preview.get("after_rows", [])),
+            anomalies=report.anomalies,
+            remaining_issues=report.remaining_issues,
+            cleaning_recipe=report.cleaning_recipe,
+            cleaning_summary=report.cleaning_summary,
+            changed_cells=audit.preview.get("changed_cells", 0),
+            changed_rows=audit.preview.get("changed_rows", 0),
+            removed_rows=audit.preview.get("removed_rows", 0),
+            validation_errors=audit.validation_errors,
+        )
+    except (AIProviderError, WorkflowValidationError) as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=f"Validation workflow failed: {exc}"
+        ) from exc
+
+
+@router.post(
+    "/{dataset_id}/validation-workflow/apply",
+    response_model=WorkflowSelectionResponse,
+)
+async def apply_validation_workflow_cleaning(
+    dataset_id: uuid.UUID,
+    payload: WorkflowSelectionRequest,
+    organization_id: uuid.UUID = Depends(get_current_organization_id),
+    session: AsyncSession = Depends(get_session),
+) -> WorkflowSelectionResponse:
+    dataset = await DatasetRepository(session).get(dataset_id)
+    if dataset is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Dataset not found")
+    await _require_project(dataset.project_id, organization_id, session)
+
+    if dataset.status != DatasetStatus.READY:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"Dataset is not ready (status={dataset.status})",
+        )
+
+    from app.services.validation_workflow import WorkflowValidationError, select_workflow_version
+
+    try:
+        version, created = await select_workflow_version(
+            session, dataset_id, payload.audit_id, payload.selection
+        )
+    except WorkflowValidationError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail={"message": exc.message, "errors": exc.errors},
+        ) from exc
+    return WorkflowSelectionResponse(
+        dataset_version_id=version.id,
+        version_number=version.version_number,
+        selection=payload.selection,
+        cleaned_version_created=created,
+    )
+
+
+@router.get("/{dataset_id}/export/{version_type}/{format}")
+async def export_dataset_file(
+    dataset_id: uuid.UUID,
+    version_type: str,
+    format: str,
+    audit_id: uuid.UUID | None = None,
+    organization_id: uuid.UUID = Depends(get_current_organization_id),
+    session: AsyncSession = Depends(get_session),
+):
+    import io
+
+    from fastapi.responses import Response
+
+    from app.ai.schemas import DatasetAuditReport
+    from app.repositories.dataset import DatasetValidationAuditRepository
+    from app.services.validation_workflow import _load_dataframe, execute_recipe
+
+    dataset = await DatasetRepository(session).get(dataset_id)
+    if dataset is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Dataset not found")
+    await _require_project(dataset.project_id, organization_id, session)
+
+    version_repo = DatasetVersionRepository(session)
+    if version_type == "raw":
+        versions = await version_repo.list_for_dataset(dataset_id)
+        version = next((candidate for candidate in versions if candidate.is_raw), None)
+    elif version_type == "cleaned":
+        versions = await version_repo.list_for_dataset(dataset_id)
+        version = next(
+            (candidate for candidate in reversed(versions) if not candidate.is_raw), None
+        )
+    else:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Unknown version")
+
+    candidate_df = None
+    if version is None and version_type == "cleaned" and audit_id is not None:
+        audit = await DatasetValidationAuditRepository(session).get(audit_id)
+        if audit is not None and audit.dataset_id == dataset_id and not audit.validation_errors:
+            source = await version_repo.get(audit.source_version_id)
+            if source is not None:
+                report = DatasetAuditReport.model_validate(audit.report)
+                executed = execute_recipe(
+                    await _load_dataframe(source), report.cleaning_recipe, report.cleaned_rows
+                )
+                if not executed.validation_errors:
+                    candidate_df = executed.dataframe
+    if version is None and candidate_df is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="No dataset version found"
+        )
+
+    if candidate_df is not None:
+        df = candidate_df
+    else:
+        assert version is not None
+        df = await _load_dataframe(version)
+
+    if format == "csv":
+        data = df.write_csv().encode("utf-8")
+        media_type = "text/csv"
+        suffix = "raw" if version_type == "raw" else "cleaned"
+        filename = f"{dataset.name}_{suffix}.csv"
+    elif format == "xlsx":
+        try:
+            buffer = io.BytesIO()
+            df.write_excel(buffer)
+            data = buffer.getvalue()
+        except Exception as exc:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="XLSX export failed",
+            ) from exc
+        media_type = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        suffix = "raw" if version_type == "raw" else "cleaned"
+        filename = f"{dataset.name}_{suffix}.xlsx"
+    else:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Unsupported format")
+
+    return Response(
+        content=data,
+        media_type=media_type,
+        headers={"Content-Disposition": f"attachment; filename={filename}"},
+    )
+
+
 @router.delete("/{dataset_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_dataset(
     dataset_id: uuid.UUID,
@@ -415,7 +604,53 @@ async def delete_dataset(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Dataset not found")
     await _require_project(dataset.project_id, organization_id, session)
 
+    from sqlmodel import delete, select
+
+    from app.models.analysis import Analysis
+    from app.models.dataset import DatasetVersion
+    from app.models.insight import Insight, Story
+    from app.models.visualization import Visualization, VisualizationVersion
+
+    version_ids_result = await session.exec(
+        select(DatasetVersion.id).where(DatasetVersion.dataset_id == dataset_id)
+    )
+    version_ids = list(version_ids_result.all())
+
+    if version_ids:
+        # 1. Fetch visualizations pointing to these version IDs
+        vis_result = await session.exec(
+            select(Visualization).where(Visualization.dataset_version_id.in_(version_ids))
+        )
+        visualizations = list(vis_result.all())
+        vis_ids = [vis.id for vis in visualizations]
+
+        if vis_ids:
+            # Delete visualization_versions first
+            await session.exec(
+                delete(VisualizationVersion).where(VisualizationVersion.visualization_id.in_(vis_ids))
+            )
+            # Delete visualizations
+            for vis in visualizations:
+                await session.delete(vis)
+
+        # 2. Delete stories pointing to these versions
+        await session.exec(
+            delete(Story).where(Story.dataset_version_id.in_(version_ids))
+        )
+
+        # 3. Delete insights pointing to these versions
+        await session.exec(
+            delete(Insight).where(Insight.dataset_version_id.in_(version_ids))
+        )
+
+    # 4. Delete analyses pointing to this dataset
+    await session.exec(
+        delete(Analysis).where(Analysis.dataset_id == dataset_id)
+    )
+
+    # 5. Safe storage and main dataset record delete
     storage = get_storage_service()
     if dataset.raw_object_key:
         storage.delete_object(storage.bucket_raw, dataset.raw_object_key)
+
     await dataset_repo.delete(dataset)

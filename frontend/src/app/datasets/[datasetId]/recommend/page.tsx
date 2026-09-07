@@ -1,6 +1,6 @@
 "use client";
 
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useParams, useRouter } from "next/navigation";
 import { useState } from "react";
 
@@ -13,8 +13,9 @@ import { Tabs } from "@/components/ui/tabs";
 import { RecommendationCard } from "@/components/recommendations/recommendation-card";
 import { ThemeCard } from "@/components/recommendations/theme-card";
 import { VisualizationRenderer } from "@/components/visualization/visualization-renderer";
+import { DatasetDiffGrid } from "@/components/datasets/dataset-diff-grid";
 import { ANALYSIS_STAGE_LABELS, getAnalysis } from "@/lib/api/analysis";
-import { getDataset, getDatasetRows } from "@/lib/api/datasets";
+import { getDataset, getDatasetRows, getValidationWorkflow, applyValidationWorkflow } from "@/lib/api/datasets";
 import { getThemeRecommendations } from "@/lib/api/theme";
 import { createVisualization } from "@/lib/api/visualizations";
 import type { VisualizationRecommendation } from "@/lib/api/types";
@@ -24,8 +25,10 @@ export default function RecommendPage() {
   const params = useParams<{ datasetId: string }>();
   const datasetId = params.datasetId;
   const router = useRouter();
+  const queryClient = useQueryClient();
   const [tab, setTab] = useState<"curated" | "theme">("curated");
   const [previewRec, setPreviewRec] = useState<VisualizationRecommendation | null>(null);
+  const [workflowChosen, setWorkflowChosen] = useState(false);
 
   const datasetQuery = useQuery({
     queryKey: ["dataset", datasetId],
@@ -46,8 +49,27 @@ export default function RecommendPage() {
 
   const rowsQuery = useQuery({
     queryKey: ["dataset-rows-preview", datasetId],
-    queryFn: () => getDatasetRows(datasetId, 100),
+    queryFn: () => getDatasetRows(datasetId, 100, analysis?.dataset_version_id),
     enabled: isReady,
+  });
+
+  const workflowQuery = useQuery({
+    queryKey: ["validation-workflow", datasetId],
+    queryFn: () => getValidationWorkflow(datasetId),
+  });
+
+  const applyWorkflowMutation = useMutation({
+    mutationFn: (selection: "original" | "cleaned") => {
+      if (!workflowQuery.data) throw new Error("Dataset audit is not loaded");
+      return applyValidationWorkflow(datasetId, workflowQuery.data.audit_id, selection);
+    },
+    onSuccess: () => {
+      setWorkflowChosen(true);
+      queryClient.invalidateQueries({ queryKey: ["analysis", datasetId] });
+      queryClient.invalidateQueries({ queryKey: ["dataset", datasetId] });
+      queryClient.invalidateQueries({ queryKey: ["dataset-rows-preview", datasetId] });
+      queryClient.invalidateQueries({ queryKey: ["validation-workflow", datasetId] });
+    },
   });
 
   const themesQuery = useQuery({
@@ -71,6 +93,10 @@ export default function RecommendPage() {
     },
   });
 
+  const handleConfirmWorkflow = async (version: "raw" | "cleaned") => {
+    await applyWorkflowMutation.mutateAsync(version === "raw" ? "original" : "cleaned");
+  };
+
   const stageEntries = Object.entries(analysis?.stages ?? {});
   const activeStageIndex = stageEntries.findIndex(([, s]) => s === "processing");
   const stageLabels = stageEntries.map(([key]) => ANALYSIS_STAGE_LABELS[key] ?? key);
@@ -78,118 +104,147 @@ export default function RecommendPage() {
   const recommendations = analysis?.recommendations?.top ?? [];
   const themes = themesQuery.data ? [...themesQuery.data.top, ...themesQuery.data.rest] : [];
 
+  const showWorkflowDiff =
+    workflowQuery.data &&
+    !workflowChosen &&
+    !applyWorkflowMutation.isSuccess;
+
   return (
     <AppShell>
       <PipelineStepper current="recommend" projectId={datasetQuery.data?.project_id} datasetId={datasetId} />
-      <section className="mx-auto flex max-w-[1180px] flex-col px-7 py-12">
-        {isReady && (
+      <section className="mx-auto flex max-w-[1180px] flex-col px-7 py-12 w-full">
+        {workflowQuery.isLoading && <ProcessingState label="Auditing dataset quality…" />}
+        {applyWorkflowMutation.isPending && <ProcessingState label="Applying cleaning and generating recommendations…" />}
+
+        {workflowQuery.isError && (
+          <ErrorState
+            title="Workflow failed"
+            description="Couldn't audit the dataset. Please ensure your dataset is fully processed."
+          />
+        )}
+
+        {workflowQuery.data && !applyWorkflowMutation.isPending && (
           <>
-            <h1 className="mb-1.5 font-headline text-[28px] font-bold">
-              {recommendations.length} way{recommendations.length === 1 ? "" : "s"} to see your data
-            </h1>
-            <p className="mb-6 max-w-[640px] text-[14.5px] text-muted-foreground">
-              Ranked by analytical relevance — the strength of the pattern behind each chart — not
-              by how many chart types are technically possible.
-            </p>
-
-            <Tabs
-              layoutId="recommend-tab"
-              className="mb-7"
-              value={tab}
-              onChange={(id) => setTab(id as "curated" | "theme")}
-              options={[
-                { id: "curated", label: `Curated · ${recommendations.length}` },
-                { id: "theme", label: "Theme & branding" },
-              ]}
-            />
-
-            {tab === "curated" && (
+            {showWorkflowDiff ? (
+              <DatasetDiffGrid
+                datasetId={datasetId}
+                workflow={workflowQuery.data}
+                onConfirm={handleConfirmWorkflow}
+              />
+            ) : (
               <>
-                {analysis?.recommendations?.shortfall_reason && (
-                  <p className="mb-5 text-sm text-muted-foreground">
-                    {analysis.recommendations.shortfall_reason}
-                  </p>
-                )}
-                {recommendations.length === 0 ? (
-                  <EmptyState
-                    title="No recommendations yet"
-                    description="This dataset didn't produce any confident visualization candidates."
-                  />
-                ) : (
-                  <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">
-                    {recommendations.map((rec, index) => (
-                      <div key={rec.story_id} className="flex flex-col gap-2.5">
-                        <RecommendationCard
-                          recommendation={rec}
-                          index={index}
-                          previewRows={rowsQuery.data?.rows}
-                        />
-                        <div className="flex gap-2">
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            className="flex-1"
-                            onClick={() => setPreviewRec(rec)}
-                          >
-                            Preview
-                          </Button>
-                          <Button
-                            size="sm"
-                            variant="default"
-                            className="flex-1"
-                            disabled={openInStudio.isPending}
-                            onClick={() => openInStudio.mutate(rec)}
-                          >
-                            {openInStudio.isPending ? "Opening…" : "Open in studio"}
-                          </Button>
+                {isReady && (
+                  <>
+                    <h1 className="mb-1.5 font-headline text-[28px] font-bold">
+                      {recommendations.length} way{recommendations.length === 1 ? "" : "s"} to see your data
+                    </h1>
+                    <p className="mb-6 max-w-[640px] text-[14.5px] text-muted-foreground">
+                      Ranked by analytical relevance — the strength of the pattern behind each chart — not
+                      by how many chart types are technically possible.
+                    </p>
+
+                    <Tabs
+                      layoutId="recommend-tab"
+                      className="mb-7"
+                      value={tab}
+                      onChange={(id) => setTab(id as "curated" | "theme")}
+                      options={[
+                        { id: "curated", label: `Curated · ${recommendations.length}` },
+                        { id: "theme", label: "Theme & branding" },
+                      ]}
+                    />
+
+                    {tab === "curated" && (
+                      <>
+                        {analysis?.recommendations?.shortfall_reason && (
+                          <p className="mb-5 text-sm text-muted-foreground">
+                            {analysis.recommendations.shortfall_reason}
+                          </p>
+                        )}
+                        {recommendations.length === 0 ? (
+                          <EmptyState
+                            title="No recommendations yet"
+                            description="This dataset didn't produce any confident visualization candidates."
+                          />
+                        ) : (
+                          <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">
+                            {recommendations.map((rec, index) => (
+                              <div key={rec.story_id} className="flex flex-col gap-2.5">
+                                <RecommendationCard
+                                  recommendation={rec}
+                                  index={index}
+                                  previewRows={rowsQuery.data?.rows}
+                                />
+                                <div className="flex gap-2">
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    className="flex-1"
+                                    onClick={() => setPreviewRec(rec)}
+                                  >
+                                    Preview
+                                  </Button>
+                                  <Button
+                                    size="sm"
+                                    variant="default"
+                                    className="flex-1"
+                                    disabled={openInStudio.isPending}
+                                    onClick={() => openInStudio.mutate(rec)}
+                                  >
+                                    {openInStudio.isPending ? "Opening…" : "Open in studio"}
+                                  </Button>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </>
+                    )}
+
+                    {tab === "theme" && (
+                      <>
+                        <p className="mb-5 max-w-[640px] text-[13.5px] text-subtle-foreground">
+                          AiVis suggests contrast-checked palettes. Pick one now — you can still switch
+                          per chart in the studio.
+                        </p>
+                        {themesQuery.isLoading && <ProcessingState label="Loading themes…" />}
+                        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                          {themes.map((theme) => (
+                            <ThemeCard
+                              key={theme.name}
+                              theme={theme}
+                              selected={selectedThemeName === theme.name}
+                              onSelect={() => setSelectedThemeName(theme.name)}
+                            />
+                          ))}
                         </div>
-                      </div>
-                    ))}
+                      </>
+                    )}
+                  </>
+                )}
+
+                {isProcessing && (
+                  <div className="flex flex-col gap-4">
+                    <h2 className="font-headline text-lg font-bold">Analyzing dataset…</h2>
+                    <StagedProcessing
+                      stages={stageLabels}
+                      activeIndex={activeStageIndex === -1 ? 0 : activeStageIndex}
+                    />
                   </div>
                 )}
-              </>
-            )}
 
-            {tab === "theme" && (
-              <>
-                <p className="mb-5 max-w-[640px] text-[13.5px] text-subtle-foreground">
-                  AiVis suggests contrast-checked palettes. Pick one now — you can still switch
-                  per chart in the studio.
-                </p>
-                {themesQuery.isLoading && <ProcessingState label="Loading themes…" />}
-                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                  {themes.map((theme) => (
-                    <ThemeCard
-                      key={theme.name}
-                      theme={theme}
-                      selected={selectedThemeName === theme.name}
-                      onSelect={() => setSelectedThemeName(theme.name)}
-                    />
-                  ))}
-                </div>
+                {isFailed && (
+                  <ErrorState
+                    title="Analysis failed"
+                    description={analysis?.error ?? "Something went wrong during analysis."}
+                  />
+                )}
+
+                {!analysis && analysisQuery.isLoading && <ProcessingState label="Loading analysis…" />}
               </>
             )}
           </>
         )}
-
-        {isProcessing && (
-          <div className="flex flex-col gap-4">
-            <h2 className="font-headline text-lg font-bold">Analyzing dataset…</h2>
-            <StagedProcessing
-              stages={stageLabels}
-              activeIndex={activeStageIndex === -1 ? 0 : activeStageIndex}
-            />
-          </div>
-        )}
-
-        {isFailed && (
-          <ErrorState
-            title="Analysis failed"
-            description={analysis?.error ?? "Something went wrong during analysis."}
-          />
-        )}
-
-        {!analysis && analysisQuery.isLoading && <ProcessingState label="Loading analysis…" />}
       </section>
 
       <Drawer open={!!previewRec} onClose={() => setPreviewRec(null)}>

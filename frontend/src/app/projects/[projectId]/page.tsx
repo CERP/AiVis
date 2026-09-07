@@ -2,7 +2,7 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { motion } from "framer-motion";
-import { FileUp } from "lucide-react";
+import { FileUp, Trash2 } from "lucide-react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useRef, useState } from "react";
@@ -12,7 +12,7 @@ import { PipelineStepper } from "@/components/layout/pipeline-stepper";
 import { Button } from "@/components/ui/button";
 import { EmptyState, ProcessingState, StatusPill } from "@/components/ui/states";
 import { ApiError } from "@/lib/api/client";
-import { listDatasets, uploadDatasetWithProgress, type Dataset } from "@/lib/api/datasets";
+import { listDatasets, uploadDatasetWithProgress, deleteDataset, type Dataset } from "@/lib/api/datasets";
 import { relativeTime } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
@@ -71,6 +71,13 @@ export default function DatasetUploadPage() {
       setUploadError(err instanceof ApiError ? err.detail : "Upload failed.");
     },
     onSettled: () => setUploadProgress(0),
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: (id: string) => deleteDataset(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["datasets", projectId] });
+    },
   });
 
   function handleFile(file: File) {
@@ -229,14 +236,30 @@ export default function DatasetUploadPage() {
                       )}
                     </div>
                   </div>
-                  <StatusPill
-                    label={
-                      dataset.status === "ready" || dataset.status === "failed"
-                        ? STATUS_LABEL[dataset.status]
-                        : `${STATUS_LABEL[dataset.status]}…`
-                    }
-                    tone={STATUS_TONE[dataset.status]}
-                  />
+                  <div className="flex items-center gap-3">
+                    <StatusPill
+                      label={
+                        dataset.status === "ready" || dataset.status === "failed"
+                          ? STATUS_LABEL[dataset.status]
+                          : `${STATUS_LABEL[dataset.status]}…`
+                      }
+                      tone={STATUS_TONE[dataset.status]}
+                    />
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-8 w-8 p-0 text-muted-foreground hover:text-negative"
+                      disabled={deleteMutation.isPending}
+                      onClick={(e) => {
+                        e.preventDefault();
+                        if (confirm(`Are you sure you want to delete ${dataset.original_filename}?`)) {
+                          deleteMutation.mutate(dataset.id);
+                        }
+                      }}
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  </div>
                 </motion.li>
               );
             })}

@@ -122,3 +122,15 @@ async def test_recovers_on_second_attempt_after_first_failure(
         system_instruction="sys", prompt="p", response_schema=_Schema
     )
     assert result.value == "recovered"
+
+
+async def test_api_failure_after_both_attempts_is_reported(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    provider = _provider_with_responses(
+        monkeypatch, [TimeoutError("offline"), TimeoutError("still offline")]
+    )
+    with pytest.raises(AIProviderError, match="failed to produce a valid"):
+        await provider.generate_structured(
+            system_instruction="sys", prompt="p", response_schema=_Schema
+        )

@@ -7,6 +7,7 @@ from app.models.dataset import (
     DataProfile,
     Dataset,
     DatasetColumn,
+    DatasetValidationAudit,
     DatasetVersion,
 )
 from app.models.export import Export
@@ -23,6 +24,7 @@ __all__ = [
     "Dataset",
     "DatasetColumn",
     "DatasetVersion",
+    "DatasetValidationAudit",
     "Export",
     "Insight",
     "Story",

@@ -102,3 +102,20 @@ class CleaningOperation(TimestampedModel, table=True):
     ai_suggested: bool = Field(default=False)
 
     dataset_version: DatasetVersion = Relationship(back_populates="cleaning_operations")
+
+
+class DatasetValidationAudit(TimestampedModel, table=True):
+    """Immutable Gemini audit and integrity-gate result for one source version."""
+
+    __tablename__ = "dataset_validation_audits"
+
+    dataset_id: uuid.UUID = Field(foreign_key="datasets.id", index=True)
+    source_version_id: uuid.UUID = Field(foreign_key="dataset_versions.id", index=True)
+    cleaned_version_id: uuid.UUID | None = Field(
+        default=None, foreign_key="dataset_versions.id", index=True
+    )
+    status: str = Field(max_length=50)
+    report: dict = Field(default_factory=dict, sa_column=Column(JSON))
+    profile: dict = Field(default_factory=dict, sa_column=Column(JSON))
+    preview: dict = Field(default_factory=dict, sa_column=Column(JSON))
+    validation_errors: list = Field(default_factory=list, sa_column=Column(JSON))

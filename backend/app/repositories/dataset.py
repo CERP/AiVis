@@ -7,6 +7,7 @@ from app.models.dataset import (
     DataProfile,
     Dataset,
     DatasetColumn,
+    DatasetValidationAudit,
     DatasetVersion,
 )
 from app.repositories.base import BaseRepository
@@ -73,3 +74,21 @@ class CleaningOperationRepository(BaseRepository[CleaningOperation]):
             )
         )
         return list(result.all())
+
+
+class DatasetValidationAuditRepository(BaseRepository[DatasetValidationAudit]):
+    model = DatasetValidationAudit
+
+    async def get_latest_for_source(
+        self, dataset_id: uuid.UUID, source_version_id: uuid.UUID
+    ) -> DatasetValidationAudit | None:
+        result = await self.session.exec(
+            select(DatasetValidationAudit)
+            .where(
+                DatasetValidationAudit.dataset_id == dataset_id,
+                DatasetValidationAudit.source_version_id == source_version_id,
+            )
+            .order_by(DatasetValidationAudit.created_at.desc())
+            .limit(1)
+        )
+        return result.first()

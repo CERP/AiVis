@@ -59,3 +59,45 @@ async def test_list_projects_reports_real_dataset_count(client: AsyncClient) -> 
 
         get_resp = await c.get(f"/api/projects/{project['id']}", headers=headers)
         assert get_resp.json()["dataset_count"] == 1
+
+
+async def test_delete_project_cascades(client: AsyncClient) -> None:
+    async with client as c:
+        signup = await c.post(
+            "/api/auth/signup",
+            json={
+                "email": "proj-del@example.com",
+                "password": "supersecret1",
+                "organization_name": "Del Co",
+            },
+        )
+        headers = {"Authorization": f"Bearer {signup.json()['access_token']}"}
+
+        # Create project
+        create_resp = await c.post("/api/projects", json={"name": "Project to Delete"}, headers=headers)
+        project = create_resp.json()
+
+        # Upload dataset
+        with open(FIXTURES / "clean.csv", "rb") as f:
+            await c.post(
+                "/api/datasets",
+                params={"project_id": project["id"]},
+                files={"file": ("clean.csv", f, "text/csv")},
+                headers=headers,
+            )
+
+        # Confirm dataset exists
+        dataset_list = await c.get("/api/datasets", params={"project_id": project["id"]}, headers=headers)
+        assert len(dataset_list.json()) == 1
+
+        # Delete project
+        del_resp = await c.delete(f"/api/projects/{project['id']}", headers=headers)
+        assert del_resp.status_code == 204
+
+        # Verify project is deleted
+        get_resp = await c.get(f"/api/projects/{project['id']}", headers=headers)
+        assert get_resp.status_code == 404
+
+        # Verify datasets of deleted project are deleted or returning 404
+        dataset_list_after = await c.get("/api/datasets", params={"project_id": project["id"]}, headers=headers)
+        assert dataset_list_after.status_code == 404

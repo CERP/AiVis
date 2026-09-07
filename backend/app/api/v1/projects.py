@@ -8,7 +8,7 @@ from app.core.db import get_session
 from app.models.project import Project
 from app.repositories.dataset import DatasetRepository
 from app.repositories.project import ProjectRepository
-from app.schemas.project import ProjectCreateRequest, ProjectResponse
+from app.schemas.project import ProjectCreateRequest, ProjectResponse, ProjectUpdateRequest
 
 router = APIRouter(prefix="/projects", tags=["projects"])
 
@@ -59,3 +59,92 @@ async def get_project(
     if project is None or project.organization_id != organization_id:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Project not found")
     return await _to_response(project, session)
+
+
+@router.patch("/{project_id}", response_model=ProjectResponse)
+async def update_project(
+    project_id: uuid.UUID,
+    payload: ProjectUpdateRequest,
+    organization_id: uuid.UUID = Depends(get_current_organization_id),
+    session: AsyncSession = Depends(get_session),
+) -> ProjectResponse:
+    project_repo = ProjectRepository(session)
+    project = await project_repo.get(project_id)
+    if project is None or project.organization_id != organization_id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Project not found")
+
+    project.name = payload.name
+    if payload.description is not None:
+        project.description = payload.description
+
+    session.add(project)
+    await session.commit()
+    await session.refresh(project)
+
+    return await _to_response(project, session)
+
+
+@router.delete("/{project_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_project(
+    project_id: uuid.UUID,
+    organization_id: uuid.UUID = Depends(get_current_organization_id),
+    session: AsyncSession = Depends(get_session),
+) -> None:
+    project_repo = ProjectRepository(session)
+    project = await project_repo.get(project_id)
+    if project is None or project.organization_id != organization_id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Project not found")
+
+    from sqlmodel import delete, select
+
+    from app.models.analysis import Analysis
+    from app.models.dataset import Dataset, DatasetVersion
+    from app.models.insight import Insight, Story
+    from app.models.visualization import Visualization, VisualizationVersion
+    from app.services.storage import get_storage_service
+
+    datasets_result = await session.exec(
+        select(Dataset).where(Dataset.project_id == project_id)
+    )
+    datasets = list(datasets_result.all())
+
+    storage = get_storage_service()
+
+    for dataset in datasets:
+        version_ids_result = await session.exec(
+            select(DatasetVersion.id).where(DatasetVersion.dataset_id == dataset.id)
+        )
+        version_ids = list(version_ids_result.all())
+
+        if version_ids:
+            vis_result = await session.exec(
+                select(Visualization).where(Visualization.dataset_version_id.in_(version_ids))
+            )
+            visualizations = list(vis_result.all())
+            vis_ids = [vis.id for vis in visualizations]
+
+            if vis_ids:
+                await session.exec(
+                    delete(VisualizationVersion).where(VisualizationVersion.visualization_id.in_(vis_ids))
+                )
+                for vis in visualizations:
+                    await session.delete(vis)
+
+            await session.exec(
+                delete(Story).where(Story.dataset_version_id.in_(version_ids))
+            )
+
+            await session.exec(
+                delete(Insight).where(Insight.dataset_version_id.in_(version_ids))
+            )
+
+        await session.exec(
+            delete(Analysis).where(Analysis.dataset_id == dataset.id)
+        )
+
+        if dataset.raw_object_key:
+            storage.delete_object(storage.bucket_raw, dataset.raw_object_key)
+
+        await session.delete(dataset)
+
+    await project_repo.delete(project)
