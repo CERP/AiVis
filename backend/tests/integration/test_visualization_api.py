@@ -170,6 +170,49 @@ async def test_apply_command_rejects_invalid_field_change(client: AsyncClient) -
         assert len(versions_resp.json()) == 1
 
 
+async def test_undo_reverts_to_previous_version(client: AsyncClient) -> None:
+    async with client as c:
+        token, project_id, version_id = await _setup(c)
+        headers = {"Authorization": f"Bearer {token}"}
+
+        create_resp = await c.post(
+            "/api/visualizations",
+            params={"project_id": project_id},
+            json={"title": "Revenue by region", "spec": _spec_payload(version_id)},
+            headers=headers,
+        )
+        viz_id = create_resp.json()["id"]
+
+        await c.patch(
+            f"/api/visualizations/{viz_id}",
+            json={"command": {"type": "change_chart_type", "params": {"chart_type": "line"}}},
+            headers=headers,
+        )
+
+        undo_resp = await c.post(f"/api/visualizations/{viz_id}/undo", headers=headers)
+        assert undo_resp.status_code == 200, undo_resp.text
+        undone = undo_resp.json()
+        assert undone["version_number"] == 3
+        assert undone["spec"]["chart_type"] == "bar"  # back to the original
+
+
+async def test_undo_with_no_prior_version_returns_409(client: AsyncClient) -> None:
+    async with client as c:
+        token, project_id, version_id = await _setup(c)
+        headers = {"Authorization": f"Bearer {token}"}
+
+        create_resp = await c.post(
+            "/api/visualizations",
+            params={"project_id": project_id},
+            json={"title": "Revenue by region", "spec": _spec_payload(version_id)},
+            headers=headers,
+        )
+        viz_id = create_resp.json()["id"]
+
+        undo_resp = await c.post(f"/api/visualizations/{viz_id}/undo", headers=headers)
+        assert undo_resp.status_code == 409
+
+
 class FakeStudioEditProvider(AIProvider):
     def __init__(self, response: StudioEditCommand | None = None, fail: bool = False):
         self._response = response

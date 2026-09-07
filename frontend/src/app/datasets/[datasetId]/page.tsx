@@ -2,31 +2,41 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { motion } from "framer-motion";
-import { RefreshCw } from "lucide-react";
 import { useParams, useRouter } from "next/navigation";
 
 import { AppShell } from "@/components/layout/app-shell";
+import { PipelineStepper } from "@/components/layout/pipeline-stepper";
 import { Button } from "@/components/ui/button";
-import { RecommendationCard } from "@/components/recommendations/recommendation-card";
-import {
-  EmptyState,
-  ErrorState,
-  ProcessingState,
-  StagedProcessing,
-  StatTile,
-} from "@/components/ui/states";
-import { Headline, SectionHeading } from "@/components/ui/typography";
-import { ANALYSIS_STAGE_LABELS, getAnalysis, retryAnalysis } from "@/lib/api/analysis";
+import { ErrorState, ProcessingState, StagedProcessing } from "@/components/ui/states";
+import { ANALYSIS_STAGE_LABELS, getAnalysis } from "@/lib/api/analysis";
 import { ApiError } from "@/lib/api/client";
-import { getDataset, getDatasetRows } from "@/lib/api/datasets";
+import { getDataset } from "@/lib/api/datasets";
 import { applyCleaning } from "@/lib/api/cleaning";
-import { getProfile } from "@/lib/api/insights";
-import { createVisualization } from "@/lib/api/visualizations";
-import type { VisualizationRecommendation } from "@/lib/api/types";
+import { getProfile, type ColumnProfile } from "@/lib/api/insights";
 import { computeCleaningSuggestions } from "@/lib/cleaning-suggestions";
 import { cn } from "@/lib/utils";
 
-export default function DatasetDetailPage() {
+const TYPE_BADGE: Record<string, { label: string; className: string }> = {
+  categorical: { label: "CAT", className: "bg-accent-muted text-accent-hover" },
+  text: { label: "CAT", className: "bg-accent-muted text-accent-hover" },
+  numeric: { label: "NUM", className: "bg-info-bg text-info" },
+  currency: { label: "NUM", className: "bg-info-bg text-info" },
+  date: { label: "DATE", className: "bg-positive-bg text-positive-accent" },
+};
+
+function badgeFor(column: ColumnProfile) {
+  const type = column.semantic_type ?? "";
+  return (
+    TYPE_BADGE[type] ?? { label: type ? type.slice(0, 4).toUpperCase() : "COL", className: "bg-secondary-bg text-secondary" }
+  );
+}
+
+function statLine(column: ColumnProfile): string {
+  const parts = [`${column.unique_count} unique`, `${column.null_count} nulls`];
+  return parts.join(" · ");
+}
+
+export default function DatasetProfilePage() {
   const params = useParams<{ datasetId: string }>();
   const datasetId = params.datasetId;
   const queryClient = useQueryClient();
@@ -42,9 +52,6 @@ export default function DatasetDetailPage() {
     queryFn: () => getProfile(datasetId),
   });
 
-  // Uploading a dataset alone starts the whole pipeline server-side (see
-  // POST /api/datasets and the AnalysisOrchestrator/worker it queues) -- there is no manual
-  // "Analyze" action; this just polls the real backend stage until it lands on ready/failed.
   const analysisQuery = useQuery({
     queryKey: ["analysis", datasetId],
     queryFn: () => getAnalysis(datasetId),
@@ -57,31 +64,6 @@ export default function DatasetDetailPage() {
   const isFailed = analysis?.status === "failed";
   const isProcessing = !!analysis && !isReady && !isFailed;
 
-  const retryMutation = useMutation({
-    mutationFn: () => retryAnalysis(datasetId),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["analysis", datasetId] }),
-  });
-
-  const rowsQuery = useQuery({
-    queryKey: ["dataset-rows-preview", datasetId],
-    queryFn: () => getDatasetRows(datasetId, 100),
-    enabled: isReady,
-  });
-
-  const openInStudio = useMutation({
-    mutationFn: (recommendation: VisualizationRecommendation) => {
-      if (!datasetQuery.data) throw new Error("Dataset not loaded yet");
-      return createVisualization(datasetQuery.data.project_id, {
-        title: recommendation.title,
-        story_id: recommendation.story_id,
-        spec: recommendation.spec,
-      });
-    },
-    onSuccess: (visualization) => {
-      router.push(`/studio/${visualization.id}`);
-    },
-  });
-
   const cleaningMutation = useMutation({
     mutationFn: (payload: { operation_type: string; column_name: string }) =>
       applyCleaning(datasetId, payload),
@@ -90,39 +72,31 @@ export default function DatasetDetailPage() {
     },
   });
 
-  const suggestions = profileQuery.data
-    ? computeCleaningSuggestions(profileQuery.data.columns)
-    : [];
+  const suggestions = profileQuery.data ? computeCleaningSuggestions(profileQuery.data.columns) : [];
+  const appliedCount = 0; // real applied-state isn't tracked server-side today -- see Suggested cleanup below
 
   const stageEntries = Object.entries(analysis?.stages ?? {});
   const activeStageIndex = stageEntries.findIndex(([, s]) => s === "processing");
   const stageLabels = stageEntries.map(([key]) => ANALYSIS_STAGE_LABELS[key] ?? key);
 
-  const recommendationCount = analysis?.recommendations?.top.length ?? 0;
-
   return (
     <AppShell>
-      <section className="mx-auto flex max-w-6xl flex-col gap-8 px-6 py-16">
-        <div>
-          <Headline as="h1" className="text-3xl">
-            Dataset overview
-          </Headline>
+      <PipelineStepper current="profile" projectId={datasetQuery.data?.project_id} datasetId={datasetId} />
+      <section className="mx-auto flex max-w-[1180px] flex-col px-7 py-12">
+        <div className="mb-1.5 flex items-baseline justify-between">
+          <h1 className="font-headline text-[28px] font-bold">Dataset profile</h1>
+          {profileQuery.data && (
+            <span className="text-[13px] text-subtle-foreground">
+              {profileQuery.data.row_count.toLocaleString()} rows · {profileQuery.data.column_count}{" "}
+              columns
+            </span>
+          )}
         </div>
+        <p className="mb-7 text-[14.5px] text-muted-foreground">
+          AiVis typed every column and flagged what needs attention before recommending charts.
+        </p>
 
         {profileQuery.isLoading && <ProcessingState label="Loading profile…" />}
-
-        {profileQuery.data && (
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-            <StatTile label="Rows" value={profileQuery.data.row_count.toLocaleString()} index={0} />
-            <StatTile label="Columns" value={profileQuery.data.column_count} index={1} />
-            <StatTile
-              label="Data quality"
-              value={analysis?.data_quality ? `${analysis.data_quality.score}/100` : "—"}
-              index={2}
-            />
-            <StatTile label="Recommendations" value={isReady ? recommendationCount : "—"} index={3} />
-          </div>
-        )}
         {profileQuery.isError && (
           <ErrorState
             description={
@@ -134,46 +108,66 @@ export default function DatasetDetailPage() {
         )}
 
         {profileQuery.data && (
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
-            {profileQuery.data.columns.map((col) => (
-              <motion.div
-                key={col.id}
-                whileHover={{ y: -2 }}
-                className="rounded-[var(--radius-token)] border border-border bg-surface p-4 shadow-sm transition-shadow hover:shadow-md"
-              >
-                <p className="font-medium">{col.name}</p>
-                <p className="text-xs text-muted-foreground">
-                  {col.semantic_type ?? col.raw_type} · {col.null_count} nulls ·{" "}
-                  {col.unique_count} unique
-                  {col.is_pii ? " · PII" : ""}
-                </p>
-              </motion.div>
-            ))}
+          <div className="mb-9 grid grid-cols-1 gap-3.5 sm:grid-cols-2 lg:grid-cols-3">
+            {profileQuery.data.columns.map((col) => {
+              const badge = badgeFor(col);
+              return (
+                <motion.div
+                  key={col.id}
+                  whileHover={{ y: -2 }}
+                  className="rounded-xl border border-border bg-surface px-[18px] py-4"
+                >
+                  <div className="mb-2 flex items-center justify-between">
+                    <span className="font-mono text-sm font-semibold">{col.name}</span>
+                    <span
+                      className={cn(
+                        "rounded px-1.5 py-0.5 font-mono text-[10px] font-bold",
+                        badge.className
+                      )}
+                    >
+                      {badge.label}
+                    </span>
+                  </div>
+                  <div className="text-[12.5px] text-muted-foreground">{statLine(col)}</div>
+                  {col.is_pii && (
+                    <div className="mt-2 flex items-center gap-1.5 text-[11.5px] font-semibold text-warning">
+                      <span className="h-1.5 w-1.5 rounded-full bg-warning" />
+                      Contains PII
+                    </div>
+                  )}
+                </motion.div>
+              );
+            })}
           </div>
         )}
 
         {analysis?.data_quality && analysis.data_quality.issues.length > 0 && (
-          <div className="flex flex-col gap-3">
-            <SectionHeading as="h2" className="text-lg">
-              Data quality — {analysis.data_quality.score}/100
-            </SectionHeading>
-            <p className="text-sm text-muted-foreground">
-              {analysis.data_quality.issues.length} issue
-              {analysis.data_quality.issues.length !== 1 ? "s" : ""} found
-            </p>
-            <ul className="flex flex-col gap-1.5">
+          <div className="mb-10 flex flex-col gap-3">
+            <div className="flex items-center justify-between">
+              <h2 className="font-headline text-lg font-bold">
+                Data quality — {analysis.data_quality.score}/100
+              </h2>
+            </div>
+            <ul className="flex flex-col gap-2">
               {analysis.data_quality.issues.map((issue, i) => (
                 <li
                   key={`${issue.type}-${issue.column}-${i}`}
-                  className={cn(
-                    "rounded-[var(--radius-token)] border border-border bg-surface px-3 py-2 text-sm",
-                    issue.severity === "high" && "border-negative/30 text-negative"
-                  )}
+                  className="flex items-start gap-3 rounded-[10px] border border-border bg-surface px-[18px] py-3.5"
                 >
-                  <p>{issue.description}</p>
-                  {issue.recommendation && (
-                    <p className="mt-1 text-xs text-muted-foreground">{issue.recommendation}</p>
-                  )}
+                  <span
+                    className={cn(
+                      "mt-1.5 h-2 w-2 shrink-0 rounded-full",
+                      issue.severity === "high" ? "bg-negative" : "bg-warning"
+                    )}
+                  />
+                  <div>
+                    <p className="text-sm font-semibold">{issue.description}</p>
+                    {issue.recommendation && (
+                      <p className="mt-0.5 text-[12.5px] text-subtle-foreground">
+                        {issue.recommendation}
+                      </p>
+                    )}
+                  </div>
                 </li>
               ))}
             </ul>
@@ -181,20 +175,26 @@ export default function DatasetDetailPage() {
         )}
 
         {suggestions.length > 0 && (
-          <div className="flex flex-col gap-3">
-            <SectionHeading as="h2" className="text-lg">
-              Suggested cleanup
-            </SectionHeading>
-            <div className="flex flex-col gap-2">
+          <div className="mb-10 flex flex-col gap-3">
+            <div className="flex items-center justify-between">
+              <h2 className="font-headline text-lg font-bold">Suggested cleanup</h2>
+              <span className="text-[13px] text-subtle-foreground">
+                {appliedCount} of {suggestions.length} applied
+              </span>
+            </div>
+            <div className="flex flex-col gap-2.5">
               {suggestions.map((s) => (
                 <motion.div
                   key={`${s.columnName}-${s.operationType}`}
                   whileHover={{ x: 2 }}
-                  className="flex items-center justify-between gap-4 rounded-[var(--radius-token)] border border-border bg-surface p-3 shadow-sm transition-shadow hover:shadow-md"
+                  className="flex items-center justify-between gap-4 rounded-[10px] border border-border bg-surface px-[18px] py-[15px]"
                 >
-                  <div>
-                    <p className="text-sm font-medium">{s.label}</p>
-                    <p className="text-xs text-muted-foreground">{s.reason}</p>
+                  <div className="flex items-start gap-3">
+                    <span className="mt-1.5 h-2 w-2 shrink-0 rounded-full bg-warning" />
+                    <div>
+                      <p className="text-sm font-semibold">{s.label}</p>
+                      <p className="mt-0.5 text-[12.5px] text-subtle-foreground">{s.reason}</p>
+                    </div>
                   </div>
                   <Button
                     size="sm"
@@ -230,8 +230,8 @@ export default function DatasetDetailPage() {
         )}
 
         {isProcessing && (
-          <div className="flex flex-col gap-4">
-            <SectionHeading as="h2">Analyzing dataset…</SectionHeading>
+          <div className="mb-10 flex flex-col gap-4">
+            <h2 className="font-headline text-lg font-bold">Analyzing dataset…</h2>
             <StagedProcessing
               stages={stageLabels}
               activeIndex={activeStageIndex === -1 ? 0 : activeStageIndex}
@@ -240,56 +240,24 @@ export default function DatasetDetailPage() {
         )}
 
         {isFailed && (
-          <div className="flex flex-col gap-3">
+          <div className="mb-10">
             <ErrorState
               title="Analysis failed"
               description={analysis?.error ?? "Something went wrong during analysis."}
-              action={
-                <Button
-                  variant="outline"
-                  onClick={() => retryMutation.mutate()}
-                  disabled={retryMutation.isPending}
-                >
-                  <RefreshCw aria-hidden className="mr-1.5 h-4 w-4" />
-                  {retryMutation.isPending ? "Retrying…" : "Retry analysis"}
-                </Button>
-              }
             />
           </div>
         )}
 
-        {isReady && analysis?.recommendations && (
-          <div className="flex flex-col gap-6">
-            <SectionHeading as="h2">Suggested visualizations</SectionHeading>
-
-            {analysis.recommendations.shortfall_reason && (
-              <p className="text-sm text-muted-foreground">
-                {analysis.recommendations.shortfall_reason}
-              </p>
-            )}
-
-            {analysis.recommendations.top.length === 0 && (
-              <EmptyState
-                title="No recommendations yet"
-                description="This dataset didn't produce any confident visualization candidates."
-              />
-            )}
-            {analysis.recommendations.top.length > 0 && (
-              <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
-                {analysis.recommendations.top.map((rec, index) => (
-                  <RecommendationCard
-                    key={rec.story_id}
-                    recommendation={rec}
-                    index={index}
-                    previewRows={rowsQuery.data?.rows}
-                    onOpenStudio={(r) => openInStudio.mutate(r)}
-                    isOpeningStudio={openInStudio.isPending}
-                  />
-                ))}
-              </div>
-            )}
-          </div>
-        )}
+        <div className="flex justify-end">
+          <Button
+            variant="accent"
+            size="lg"
+            disabled={!analysis}
+            onClick={() => router.push(`/datasets/${datasetId}/recommend`)}
+          >
+            Generate recommendations →
+          </Button>
+        </div>
       </section>
     </AppShell>
   );

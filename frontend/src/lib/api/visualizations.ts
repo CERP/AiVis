@@ -56,3 +56,7 @@ export function listVersions(id: string) {
 export function applyCommand(id: string, command: VisualizationCommand) {
   return apiClient.patch<VisualizationVersion>(`/api/visualizations/${id}`, { command });
 }
+
+export function undoVisualization(id: string) {
+  return apiClient.post<VisualizationVersion>(`/api/visualizations/${id}/undo`);
+}

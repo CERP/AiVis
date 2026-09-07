@@ -8,7 +8,7 @@ import type { NextRequest } from "next/server";
  * Every protected API call is still authorized server-side regardless of this check; this is
  * a UX redirect, not the security boundary.
  */
-const PROTECTED_PREFIXES = ["/projects", "/datasets", "/studio"];
+const PROTECTED_PREFIXES = ["/projects", "/datasets", "/studio", "/settings"];
 const AUTH_COOKIE_NAME = "aivis_auth_present";
 
 export function proxy(request: NextRequest) {
@@ -28,5 +28,5 @@ export function proxy(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/projects/:path*", "/datasets/:path*", "/studio/:path*"],
+  matcher: ["/projects/:path*", "/datasets/:path*", "/studio/:path*", "/settings/:path*"],
 };

@@ -19,10 +19,12 @@ from app.schemas.visualization import (
     VisualizationVersionResponse,
 )
 from app.services.visualization import (
+    NoPreviousVersionError,
     VisualizationValidationError,
     apply_command_to_visualization,
     apply_nl_edit_to_visualization,
     create_visualization,
+    revert_to_previous_version,
 )
 from app.visualization.commands import CommandError
 
@@ -148,6 +150,19 @@ async def nl_edit_route(
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=detail) from exc
 
     return new_version
+
+
+@router.post("/{visualization_id}/undo", response_model=VisualizationVersionResponse)
+async def undo_route(
+    visualization_id: uuid.UUID,
+    organization_id: uuid.UUID = Depends(get_current_organization_id),
+    session: AsyncSession = Depends(get_session),
+) -> VisualizationVersionResponse:
+    visualization = await _get_owned_visualization(visualization_id, organization_id, session)
+    try:
+        return await revert_to_previous_version(session, visualization=visualization)
+    except NoPreviousVersionError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
 
 
 @router.get("/{visualization_id}/versions", response_model=list[VisualizationVersionResponse])

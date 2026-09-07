@@ -108,6 +108,37 @@ async def apply_command_to_visualization(
     return new_version
 
 
+class NoPreviousVersionError(Exception):
+    """Raised when Undo is requested but there's only one version -- nothing to revert to."""
+
+
+async def revert_to_previous_version(
+    session: AsyncSession, *, visualization: Visualization
+) -> VisualizationVersion:
+    """Undo: clones the second-latest version's spec into a brand-new version -- consistent with
+    the immutable version-chain pattern used everywhere else (never edits or deletes history)."""
+    version_repo = VisualizationVersionRepository(session)
+    history = await version_repo.list_for_visualization(visualization.id)
+    if len(history) < 2:
+        raise NoPreviousVersionError("No earlier version to revert to")
+
+    latest, previous = history[-1], history[-2]
+    new_version = await version_repo.create(
+        VisualizationVersion(
+            visualization_id=visualization.id,
+            version_number=latest.version_number + 1,
+            spec=previous.spec,
+            change_summary="Undo",
+            created_by="user",
+        )
+    )
+
+    visualization.current_version_id = new_version.id
+    session.add(visualization)
+    await session.commit()
+    return new_version
+
+
 async def apply_nl_edit_to_visualization(
     session: AsyncSession,
     *,
