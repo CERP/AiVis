@@ -26,45 +26,48 @@ export function MarketingHeader() {
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
 
   return (
-    <header className="border-b border-border px-6 py-[18px] sm:px-12 sm:py-[22px]">
-      <div className="flex items-center justify-between">
-        <Link href="/" className="flex items-center gap-2.5">
-          <span className="flex h-7 w-7 items-center justify-center rounded-[7px] bg-accent">
-            <span className="h-2.5 w-2.5 rounded-sm bg-white" />
+    <header className="sticky top-0 z-40 px-4">
+      <div className="mx-auto flex h-[58px] max-w-[980px] items-center justify-between rounded-b-[22px] bg-[#08080a] px-4 shadow-[0_12px_36px_rgba(8,8,10,0.2)] sm:px-5">
+        <Link href="/" className="flex items-center gap-2.5 text-white">
+          <span className="relative flex h-8 w-8 items-center justify-center rounded-[9px] bg-gradient-to-b from-[#9a83ff] to-[#6847ef] shadow-[inset_0_1px_0_rgba(255,255,255,0.35)]">
+            <span className="h-2.5 w-2.5 rotate-45 rounded-[3px] bg-white" />
           </span>
-          <span className="font-headline text-[19px] font-bold tracking-tight">AiVis</span>
+          <span className="font-headline text-[17px] font-bold tracking-[-0.03em]">AiVis</span>
         </Link>
 
-        <nav className="hidden items-center gap-8 md:flex">
+        <nav className="hidden items-center gap-1 md:flex">
           {NAV_LINKS.map((link) => (
             <Link
               key={link.label}
               href={link.href}
-              className="text-sm font-medium text-muted-foreground hover:text-foreground"
+              className="rounded-lg px-3 py-2 text-[13px] font-medium text-white/55 transition-colors hover:bg-white/10 hover:text-white"
             >
               {link.label}
             </Link>
           ))}
-          <ThemeToggle />
+        </nav>
+
+        <nav className="hidden items-center gap-2 md:flex" aria-label="Account navigation">
+          <span className="[&>button]:border-white/15 [&>button]:text-white/60 [&>button:hover]:bg-white/10 [&>button:hover]:text-white"><ThemeToggle /></span>
           {!token && (
-            <Link href="/login" className="text-sm font-semibold">
+            <Link href="/login" className="rounded-lg px-3 py-2 text-[13px] font-semibold text-white/75 hover:text-white">
               Log in
             </Link>
           )}
-          <Button variant="default" size="sm" onClick={() => router.push(primaryHref)}>
+          <Button className="bg-white text-[#08080a] hover:bg-white/90" variant="default" size="sm" onClick={() => router.push(primaryHref)}>
             {token ? "Go to projects" : "Start free"}
           </Button>
-          {token && <UserMenu />}
+          {token && <span className="[&>div>button]:bg-white [&>div>button]:text-[#08080a]"><UserMenu /></span>}
         </nav>
 
         <div className="flex items-center gap-2 md:hidden">
-          <ThemeToggle />
+          <span className="[&>button]:border-white/15 [&>button]:text-white/70"><ThemeToggle /></span>
           <button
             type="button"
             aria-label={mobileNavOpen ? "Close navigation menu" : "Open navigation menu"}
             aria-expanded={mobileNavOpen}
             onClick={() => setMobileNavOpen((v) => !v)}
-            className="flex h-10 w-10 items-center justify-center rounded-[var(--radius-token)] border border-border-strong text-muted-foreground hover:text-foreground"
+            className="flex h-10 w-10 items-center justify-center rounded-[var(--radius-token)] border border-white/15 text-white/70 hover:bg-white/10 hover:text-white"
           >
             <Menu aria-hidden className="h-5 w-5" />
           </button>
@@ -72,13 +75,13 @@ export function MarketingHeader() {
       </div>
 
       {mobileNavOpen && (
-        <nav className="mt-4 flex flex-col gap-1 border-t border-border pt-4 text-sm md:hidden">
+        <nav className="mx-auto mt-2 flex max-w-[980px] flex-col gap-1 rounded-2xl bg-[#08080a] p-3 text-sm text-white shadow-xl md:hidden">
           {NAV_LINKS.map((link) => (
             <Link
               key={link.label}
               href={link.href}
               onClick={() => setMobileNavOpen(false)}
-              className="rounded-[var(--radius-token)] px-2 py-2.5 font-medium text-muted-foreground hover:bg-surface-muted hover:text-foreground"
+              className="rounded-[var(--radius-token)] px-2 py-2.5 font-medium text-white/65 hover:bg-white/10 hover:text-white"
             >
               {link.label}
             </Link>

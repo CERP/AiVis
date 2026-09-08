@@ -1,8 +1,9 @@
 "use client";
 
 import { motion } from "framer-motion";
-import { Download, SlidersHorizontal, Sparkles } from "lucide-react";
+import { ChevronLeft, ChevronRight, Download, SlidersHorizontal, Sparkles } from "lucide-react";
 import { useRouter } from "next/navigation";
+import { useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { MarketingHeader } from "@/components/layout/marketing-header";
@@ -47,6 +48,33 @@ const FEATURES = [
 
 const PREVIEW_BARS = [62, 88, 47, 71, 95, 55];
 
+const CHART_EXAMPLES = [
+  {
+    eyebrow: "Student performance",
+    title: "Attendance is the strongest signal for final score",
+    insight: "Gemini found a consistent positive relationship after excluding two unresolved score anomalies.",
+    mapping: "X: Attendance rate · Y: Final score",
+    values: [38, 49, 55, 68, 76, 91],
+    confidence: 94,
+  },
+  {
+    eyebrow: "Revenue operations",
+    title: "Enterprise accounts drive most expansion revenue",
+    insight: "A segmented bar chart makes the concentration clearer than a total-only KPI.",
+    mapping: "X: Account segment · Y: Expansion revenue",
+    values: [31, 46, 82, 57, 96, 69],
+    confidence: 91,
+  },
+  {
+    eyebrow: "Product analytics",
+    title: "Activation improved after the onboarding change",
+    insight: "The weekly trend preserves the rollout date and reveals a sustained lift rather than a temporary spike.",
+    mapping: "X: Week · Y: Activation rate",
+    values: [32, 39, 44, 67, 75, 83],
+    confidence: 89,
+  },
+];
+
 const fadeUp = (delay = 0) => ({
   initial: { opacity: 0, y: 12 },
   animate: { opacity: 1, y: 0 },
@@ -57,6 +85,12 @@ export default function LandingPage() {
   const router = useRouter();
   const token = useAuthStore((s) => s.token);
   const primaryHref = token ? "/projects" : "/signup";
+  const [exampleIndex, setExampleIndex] = useState(0);
+  const example = CHART_EXAMPLES[exampleIndex];
+
+  const showExample = (offset: number) => {
+    setExampleIndex((current) => (current + offset + CHART_EXAMPLES.length) % CHART_EXAMPLES.length);
+  };
 
   return (
     <div className="min-h-screen bg-surface">
@@ -86,8 +120,12 @@ export default function LandingPage() {
             <Button variant="accent" size="lg" onClick={() => router.push(primaryHref)}>
               Upload a dataset
             </Button>
-            <Button variant="outline" size="lg">
-              Watch a 90s demo
+            <Button
+              variant="outline"
+              size="lg"
+              onClick={() => document.getElementById("chart-examples")?.scrollIntoView({ behavior: "smooth" })}
+            >
+              View chart examples
             </Button>
           </motion.div>
           <motion.div {...fadeUp(0.2)} className="flex flex-wrap gap-6 sm:gap-9">
@@ -127,6 +165,96 @@ export default function LandingPage() {
             </div>
           </div>
         </motion.div>
+      </section>
+
+      <section id="chart-examples" className="scroll-mt-16 border-y border-border bg-surface-muted">
+        <div className="mx-auto grid max-w-[1200px] grid-cols-1 gap-8 px-6 py-14 sm:px-12 lg:grid-cols-[0.72fr_1.28fr] lg:items-center lg:py-20">
+          <div>
+            <div className="mb-3 text-[13px] font-semibold uppercase tracking-[0.05em] text-accent">
+              Example insights
+            </div>
+            <h2 className="mb-4 font-headline text-[30px] font-bold leading-tight tracking-[-0.02em]">
+              See the recommendation, not just the chart type.
+            </h2>
+            <p className="mb-7 max-w-md text-[15px] leading-relaxed text-muted-foreground">
+              AiVis connects a valid chart to real columns, explains why it fits, and keeps the
+              underlying dataset version visible.
+            </p>
+            <Button variant="outline" onClick={() => router.push("/chart-gallery")}>
+              Explore chart gallery
+            </Button>
+          </div>
+
+          <div aria-roledescription="carousel" aria-label="Example chart recommendations">
+            <div className="overflow-hidden rounded-2xl border border-border bg-surface shadow-[0_18px_50px_rgba(33,28,61,0.09)]">
+              <div className="grid gap-0 md:grid-cols-[0.92fr_1.08fr]">
+                <div className="border-b border-border p-6 md:border-b-0 md:border-r md:p-8">
+                  <div className="mb-4 flex items-center justify-between gap-3">
+                    <span className="rounded-full bg-accent-muted px-3 py-1 text-xs font-semibold text-accent-hover">
+                      {example.eyebrow}
+                    </span>
+                    <span className="font-mono text-[11px] text-subtle-foreground">
+                      {example.confidence}% confidence
+                    </span>
+                  </div>
+                  <h3 className="mb-3 font-headline text-xl font-semibold leading-snug text-ink">
+                    {example.title}
+                  </h3>
+                  <p className="mb-5 text-[13.5px] leading-relaxed text-muted-foreground">
+                    {example.insight}
+                  </p>
+                  <div className="rounded-lg bg-surface-muted px-3 py-2 font-mono text-[11px] text-muted-foreground">
+                    {example.mapping}
+                  </div>
+                </div>
+
+                <div className="flex min-h-[260px] flex-col bg-[radial-gradient(circle_at_top_right,rgba(114,87,232,0.13),transparent_52%)] p-6 md:p-8">
+                  <div className="mb-6 flex items-center justify-between text-xs text-subtle-foreground">
+                    <span>Recommended visualization</span>
+                    <span>Selected dataset · cleaned</span>
+                  </div>
+                  <div className="flex flex-1 items-end gap-3 border-b border-l border-border px-4 pt-3">
+                    {example.values.map((value, index) => (
+                      <motion.div
+                        key={`${exampleIndex}-${index}`}
+                        initial={{ height: 0 }}
+                        animate={{ height: `${value}%` }}
+                        transition={{ duration: 0.35, delay: index * 0.035 }}
+                        className="min-h-2 flex-1 rounded-t-md bg-gradient-to-t from-accent-hover to-accent"
+                        title={`${value}%`}
+                      />
+                    ))}
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="mt-4 flex items-center justify-between">
+              <div className="flex gap-2" aria-label="Choose example">
+                {CHART_EXAMPLES.map((item, index) => (
+                  <button
+                    key={item.eyebrow}
+                    type="button"
+                    aria-label={`Show ${item.eyebrow} example`}
+                    aria-current={index === exampleIndex}
+                    onClick={() => setExampleIndex(index)}
+                    className={`h-2 rounded-full transition-all ${
+                      index === exampleIndex ? "w-7 bg-accent" : "w-2 bg-border hover:bg-subtle-foreground"
+                    }`}
+                  />
+                ))}
+              </div>
+              <div className="flex gap-2">
+                <Button variant="outline" size="icon" aria-label="Previous example" onClick={() => showExample(-1)}>
+                  <ChevronLeft aria-hidden className="h-4 w-4" />
+                </Button>
+                <Button variant="outline" size="icon" aria-label="Next example" onClick={() => showExample(1)}>
+                  <ChevronRight aria-hidden className="h-4 w-4" />
+                </Button>
+              </div>
+            </div>
+          </div>
+        </div>
       </section>
 
       <section id="how-it-works" className="scroll-mt-20 border-t border-border bg-surface-muted">

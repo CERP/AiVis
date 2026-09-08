@@ -45,7 +45,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
       className={`h-full antialiased ${spaceGrotesk.variable} ${ibmPlexSans.variable} ${ibmPlexMono.variable}`}
       suppressHydrationWarning
     >
-      <head>
+      <head suppressHydrationWarning>
         <script dangerouslySetInnerHTML={{ __html: THEME_INIT_SCRIPT }} />
       </head>
       <body className="min-h-full flex flex-col bg-background text-foreground">

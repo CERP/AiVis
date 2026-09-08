@@ -50,7 +50,7 @@ export function AuthSplitLayout({
         </div>
       </div>
 
-      <div className="flex items-center justify-center p-12">
+      <div className="flex items-center justify-center px-5 py-10 sm:p-12">
         <div className="w-full max-w-[380px]">
           <Tabs
             layoutId="auth-tab"

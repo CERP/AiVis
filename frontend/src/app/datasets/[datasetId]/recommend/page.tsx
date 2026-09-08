@@ -20,6 +20,8 @@ import { getThemeRecommendations } from "@/lib/api/theme";
 import { createVisualization } from "@/lib/api/visualizations";
 import type { VisualizationRecommendation } from "@/lib/api/types";
 import { getChartDefinition } from "@/lib/visualization/registry";
+import { ApiError } from "@/lib/api/client";
+import { isUuid } from "@/lib/utils";
 
 export default function RecommendPage() {
   const params = useParams<{ datasetId: string }>();
@@ -84,7 +86,11 @@ export default function RecommendPage() {
       if (!datasetQuery.data) throw new Error("Dataset not loaded yet");
       return createVisualization(datasetQuery.data.project_id, {
         title: recommendation.title,
-        story_id: recommendation.story_id,
+        // story_id doubles as a client-side key: it's a real stories.id only for
+        // insight-backed recommendations, and a synthetic tag ("gemini-chart:1",
+        // "ai-finding:0") for the rest. The API column is a stories FK, so anything
+        // that isn't a UUID has to be persisted as null or the POST 422s.
+        story_id: isUuid(recommendation.story_id) ? recommendation.story_id : null,
         spec: recommendation.spec,
       });
     },
@@ -92,6 +98,9 @@ export default function RecommendPage() {
       router.push(`/studio/${visualization.id}`);
     },
   });
+
+  const isOpeningRecommendation = (recommendation: VisualizationRecommendation) =>
+    openInStudio.isPending && openInStudio.variables?.story_id === recommendation.story_id;
 
   const handleConfirmWorkflow = async (version: "raw" | "cleaned") => {
     await applyWorkflowMutation.mutateAsync(version === "raw" ? "original" : "cleaned");
@@ -112,7 +121,19 @@ export default function RecommendPage() {
   return (
     <AppShell>
       <PipelineStepper current="recommend" projectId={datasetQuery.data?.project_id} datasetId={datasetId} />
-      <section className="mx-auto flex max-w-[1180px] flex-col px-7 py-12 w-full">
+      <section className="mx-auto flex w-full max-w-[1240px] flex-col px-5 py-10 sm:px-7 lg:py-12">
+        <div className="mb-7">
+          <p className="mb-2 text-[11px] font-bold uppercase tracking-[0.12em] text-accent">
+            Data preparation
+          </p>
+          <h1 className="font-headline text-[30px] font-bold tracking-[-0.035em] sm:text-[34px]">
+            Review your dataset
+          </h1>
+          <p className="mt-2 max-w-2xl text-sm text-muted-foreground">
+            Compare the immutable original with Gemini&apos;s validated cleaning proposal, then
+            choose which version should power your visualizations.
+          </p>
+        </div>
         {workflowQuery.isLoading && <ProcessingState label="Auditing dataset quality…" />}
         {applyWorkflowMutation.isPending && <ProcessingState label="Applying cleaning and generating recommendations…" />}
 
@@ -135,9 +156,9 @@ export default function RecommendPage() {
               <>
                 {isReady && (
                   <>
-                    <h1 className="mb-1.5 font-headline text-[28px] font-bold">
+                    <h2 className="mb-1.5 font-headline text-[26px] font-bold">
                       {recommendations.length} way{recommendations.length === 1 ? "" : "s"} to see your data
-                    </h1>
+                    </h2>
                     <p className="mb-6 max-w-[640px] text-[14.5px] text-muted-foreground">
                       Ranked by analytical relevance — the strength of the pattern behind each chart — not
                       by how many chart types are technically possible.
@@ -167,7 +188,16 @@ export default function RecommendPage() {
                             description="This dataset didn't produce any confident visualization candidates."
                           />
                         ) : (
-                          <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">
+                          <>
+                            {openInStudio.isError && (
+                              <p role="alert" className="mb-4 text-sm text-negative">
+                                Couldn&apos;t open this chart in the studio:{" "}
+                                {openInStudio.error instanceof ApiError
+                                  ? openInStudio.error.detail
+                                  : "please try again."}
+                              </p>
+                            )}
+                            <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">
                             {recommendations.map((rec, index) => (
                               <div key={rec.story_id} className="flex flex-col gap-2.5">
                                 <RecommendationCard
@@ -191,12 +221,13 @@ export default function RecommendPage() {
                                     disabled={openInStudio.isPending}
                                     onClick={() => openInStudio.mutate(rec)}
                                   >
-                                    {openInStudio.isPending ? "Opening…" : "Open in studio"}
+                                    {isOpeningRecommendation(rec) ? "Opening…" : "Open in studio"}
                                   </Button>
                                 </div>
                               </div>
                             ))}
-                          </div>
+                            </div>
+                          </>
                         )}
                       </>
                     )}
@@ -257,7 +288,14 @@ export default function RecommendPage() {
             <div className="mb-5 flex h-[220px] items-center justify-center rounded-xl bg-surface-muted p-6">
               {rowsQuery.data?.rows && (
                 <VisualizationRenderer
-                  spec={{ ...previewRec.spec, layout: { ...previewRec.spec.layout, height: 190 } }}
+                  // The drawer already renders the title as an <h2> above; leaving it on the spec
+                  // draws it a second time inside the chart, which also overflows the fixed-height
+                  // preview box and collides with the heading.
+                  spec={{
+                    ...previewRec.spec,
+                    typography: { ...previewRec.spec.typography, title: null },
+                    layout: { ...previewRec.spec.layout, height: 190 },
+                  }}
                   rows={rowsQuery.data.rows}
                 />
               )}
@@ -274,7 +312,7 @@ export default function RecommendPage() {
               disabled={openInStudio.isPending}
               onClick={() => openInStudio.mutate(previewRec)}
             >
-              {openInStudio.isPending ? "Opening…" : "Open in studio →"}
+              {isOpeningRecommendation(previewRec) ? "Opening…" : "Open in studio →"}
             </Button>
           </>
         )}

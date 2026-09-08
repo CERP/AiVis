@@ -2,7 +2,7 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { motion } from "framer-motion";
-import { Pencil, Trash2 } from "lucide-react";
+import { FolderKanban, Pencil, Plus, Trash2 } from "lucide-react";
 import Link from "next/link";
 import { useState } from "react";
 
@@ -59,11 +59,14 @@ export default function ProjectsPage() {
 
   return (
     <AppShell>
-      <section className="mx-auto max-w-[920px] px-6 py-14 sm:px-7">
-        <div className="mb-1.5 flex items-start justify-between gap-4">
+      <section className="mx-auto max-w-[1240px] px-5 py-10 sm:px-7 lg:py-12">
+        <div className="mb-8 flex items-end justify-between gap-4">
           <div>
-            <h1 className="font-headline text-[28px] font-bold">Your projects</h1>
-            <p className="mt-2 text-[14.5px] text-muted-foreground">
+            <p className="mb-2 text-[11px] font-bold uppercase tracking-[0.12em] text-accent">
+              Workspace
+            </p>
+            <h1 className="font-headline text-[34px] font-bold tracking-[-0.04em]">Your projects</h1>
+            <p className="mt-2 max-w-2xl text-sm text-muted-foreground">
               Projects group related datasets, recommendations, and studio visualizations for one
               report or analysis.
             </p>
@@ -75,9 +78,9 @@ export default function ProjectsPage() {
           )}
         </div>
 
-        <div className="mb-8 mt-7 rounded-[14px] border border-border bg-surface px-[22px] py-5">
-          <div className="mb-3 text-[12.5px] font-semibold uppercase tracking-[0.04em] text-subtle-foreground">
-            New project
+        <div className="mb-9 rounded-2xl border border-accent/15 bg-gradient-to-r from-accent-muted to-surface px-5 py-5 shadow-sm shadow-accent/5 sm:px-6">
+          <div className="mb-3 flex items-center gap-2 text-[12px] font-bold text-accent-hover">
+            <Plus aria-hidden className="h-4 w-4" /> Start a new analysis
           </div>
           <form
             className="flex flex-col gap-2.5 sm:flex-row"
@@ -92,7 +95,7 @@ export default function ProjectsPage() {
             <Input
               id="project-name"
               className="flex-1"
-              placeholder="e.g. Riverbend USD Board Report"
+              placeholder="Project name, e.g. Class 7 performance"
               value={newProjectName}
               onChange={(e) => setNewProjectName(e.target.value)}
             />
@@ -102,8 +105,8 @@ export default function ProjectsPage() {
           </form>
         </div>
 
-        <div className="mb-3 text-[12.5px] font-semibold uppercase tracking-[0.04em] text-subtle-foreground">
-          All projects
+        <div className="mb-4 text-[11px] font-bold uppercase tracking-[0.09em] text-subtle-foreground">
+          Recent projects
         </div>
 
         {isLoading && <ProcessingState label="Loading projects…" />}
@@ -115,20 +118,20 @@ export default function ProjectsPage() {
           />
         )}
         {data && data.length > 0 && (
-          <ul className="flex flex-col gap-2.5">
+          <ul className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
             {data.map((project) => (
-              <motion.li key={project.id} whileHover={{ x: 2 }}>
-                <div className="relative group">
+              <motion.li key={project.id} whileHover={{ y: -2 }}>
+                <div className="group relative h-full">
                   <Link
                     href={`/projects/${project.id}`}
-                    className="flex items-center gap-4 rounded-xl border border-border bg-surface px-5 py-[18px] hover:border-border-strong pr-24"
+                    className="flex h-full min-h-36 flex-col justify-between rounded-2xl border border-border bg-surface p-5 pr-20 shadow-sm shadow-black/[0.02] transition-colors hover:border-accent/30"
                   >
-                    <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-[10px] bg-accent-muted font-headline text-[15px] font-bold text-accent-hover">
-                      {project.name.charAt(0).toUpperCase()}
+                    <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-accent-muted text-accent">
+                      <FolderKanban aria-hidden className="h-4 w-4" />
                     </div>
-                    <div className="min-w-0 flex-1">
-                      <div className="truncate text-[15px] font-semibold">{project.name}</div>
-                      <div className="mt-0.5 text-[12.5px] text-subtle-foreground">
+                    <div className="mt-6 min-w-0">
+                      <div className="truncate font-headline text-[16px] font-bold">{project.name}</div>
+                      <div className="mt-1 text-[12.5px] text-subtle-foreground">
                         {project.dataset_count} dataset{project.dataset_count === 1 ? "" : "s"} ·
                         updated {relativeTime(project.updated_at)}
                       </div>

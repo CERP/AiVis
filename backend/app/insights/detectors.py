@@ -6,6 +6,7 @@ Insight.calculation), so the provenance survives into the persisted row.
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass, field
 
 import polars as pl
@@ -149,7 +150,7 @@ def detect_relationship(
         return None
 
     corr = subset.select(pl.corr(col_a, col_b)).item()
-    if corr is None or abs(corr) < _CORRELATION_THRESHOLD:
+    if corr is None or math.isnan(corr) or abs(corr) < _CORRELATION_THRESHOLD:
         return None
 
     strength = "strong" if abs(corr) >= 0.7 else "moderate"

@@ -59,7 +59,12 @@ class GeminiProvider(AIProvider):
                     config=types.GenerateContentConfig(
                         system_instruction=system_instruction,
                         response_mime_type="application/json",
-                        response_schema=response_schema,
+                        # response_schema (pydantic -> google's Schema type) rejects any field
+                        # using additionalProperties (e.g. dict[str, Any]) with "additionalProperties
+                        # is only supported in Gemini Enterprise Agent Platform mode". Passing the
+                        # raw pydantic JSON schema via response_json_schema instead supports it —
+                        # per google-genai's own docs, this is the documented fallback.
+                        response_json_schema=response_schema.model_json_schema(),
                         temperature=_TEMPERATURE,
                         max_output_tokens=_MAX_OUTPUT_TOKENS,
                     ),

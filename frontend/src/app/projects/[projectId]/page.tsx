@@ -88,13 +88,19 @@ export default function DatasetUploadPage() {
   return (
     <AppShell>
       <PipelineStepper current="upload" projectId={projectId} />
-      <section className="mx-auto flex max-w-[920px] flex-col px-7 py-14">
-        <h1 className="mb-1.5 font-headline text-[28px] font-bold">Datasets</h1>
-        <p className="mb-8 text-[14.5px] text-muted-foreground">
-          Upload a file to profile, clean, and generate visualization recommendations.
-        </p>
-
+      <section className="mx-auto flex max-w-[1120px] flex-col px-5 py-10 sm:px-7 lg:py-12">
         <div className="mb-8">
+          <p className="mb-2 text-[11px] font-bold uppercase tracking-[0.12em] text-accent">
+            Dataset workspace
+          </p>
+          <h1 className="font-headline text-[34px] font-bold tracking-[-0.04em]">Your data</h1>
+          <p className="mt-2 max-w-2xl text-sm text-muted-foreground">
+            Upload a source file. AiVis profiles it locally, then Gemini proposes a safe cleaning
+            strategy before visualization.
+          </p>
+        </div>
+
+        <div className="mb-10">
           <input
             ref={fileInputRef}
             type="file"
@@ -133,7 +139,7 @@ export default function DatasetUploadPage() {
             }}
             transition={{ duration: 0.15 }}
             className={cn(
-              "flex cursor-pointer flex-col items-center gap-3.5 rounded-[14px] border-[1.5px] border-dashed px-12 py-12 text-center",
+              "flex cursor-pointer flex-col items-center gap-3.5 rounded-2xl border-[1.5px] border-dashed px-8 py-11 text-center shadow-sm shadow-black/[0.02] sm:px-12",
               upload.isPending && "pointer-events-none opacity-70"
             )}
           >
@@ -150,7 +156,7 @@ export default function DatasetUploadPage() {
               </div>
             ) : (
               <>
-                <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-accent-muted">
+                <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-accent-muted shadow-sm shadow-accent/10">
                   <FileUp aria-hidden className="h-5 w-5 text-accent" />
                 </div>
                 <p className="text-[15.5px] font-semibold">Drag a file here, or browse</p>
@@ -178,7 +184,7 @@ export default function DatasetUploadPage() {
           )}
         </div>
 
-        <div className="mb-3 text-[12.5px] font-semibold uppercase tracking-[0.04em] text-subtle-foreground">
+        <div className="mb-4 text-[11px] font-bold uppercase tracking-[0.09em] text-subtle-foreground">
           Recent uploads
         </div>
 
@@ -190,15 +196,15 @@ export default function DatasetUploadPage() {
           />
         )}
         {datasets && datasets.length > 0 && (
-          <ul className="flex flex-col gap-2.5">
+          <ul className="overflow-hidden rounded-2xl border border-border bg-surface shadow-sm shadow-black/[0.02]">
             {datasets.map((dataset) => {
               const chip = fileKindChip(dataset.original_filename);
               return (
                 <motion.li
                   key={dataset.id}
-                  whileHover={{ x: 2 }}
+                  whileHover={{ backgroundColor: "var(--surface-muted)" }}
                   className={cn(
-                    "flex items-center justify-between rounded-[10px] border border-border bg-surface px-[18px] py-4",
+                    "flex items-center justify-between border-b border-border px-5 py-4 last:border-b-0",
                     dataset.status !== "ready" && dataset.status !== "failed" && "opacity-75"
                   )}
                 >

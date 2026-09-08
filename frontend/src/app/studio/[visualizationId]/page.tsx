@@ -168,6 +168,16 @@ export default function StudioPage() {
     );
   }
 
+  if (visualizationQuery.isLoading) {
+    return (
+      <AppShell>
+        <section className="mx-auto max-w-3xl px-6 py-16">
+          <ProcessingState label="Opening visualization studio…" />
+        </section>
+      </AppShell>
+    );
+  }
+
   return (
     <AppShell>
       <PipelineStepper
@@ -179,7 +189,7 @@ export default function StudioPage() {
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
             <Headline as="h1" className="text-3xl">
-              {visualizationQuery.data?.title ?? "Studio"}
+              {visualizationQuery.data?.title}
             </Headline>
             {currentVersion && (
               <Subtitle className="mt-2">

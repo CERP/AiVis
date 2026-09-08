@@ -2,18 +2,18 @@
 
 :root {
   /* AiVis design system -- see design_handoff_aivis_core_flow mockup */
-  --background: #f7f7f9;
-  --foreground: #14151a;
+  --background: #f5f6fa;
+  --foreground: #18191f;
   --surface: #ffffff;
-  --surface-muted: #f0f1f5;
-  --border: #e3e4ea;
-  --border-strong: #cbcdd6;
+  --surface-muted: #f0f2f7;
+  --border: #e7e8ef;
+  --border-strong: #d4d6e0;
   --muted-foreground: #5b5d6b;
   --subtle-foreground: #8b8d99;
-  --accent: #5946e5;
-  --accent-hover: #4735c9;
+  --accent: #7257e8;
+  --accent-hover: #6045d5;
   --accent-foreground: #ffffff;
-  --accent-muted: #eeebfc;
+  --accent-muted: #f0ecff;
   --ink: #14151a;
   --panel: #0b0c10;
   --positive: #0f7d5c;
@@ -34,7 +34,7 @@
   --chart-5: #b23a82;
   --chart-6: #7c8797;
 
-  --radius: 0.55rem;
+  --radius: 0.75rem;
 
   --font-headline: var(--font-space-grotesk), -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
   --font-body: var(--font-ibm-plex-sans), -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
@@ -125,6 +125,7 @@ body {
   background: var(--background);
   color: var(--foreground);
   font-family: var(--font-body);
+  min-width: 320px;
 }
 
 ::selection {

@@ -10,7 +10,10 @@ from dataclasses import dataclass, field
 
 import polars as pl
 
-_CURRENCY_CHARS = str.maketrans("", "", "$€£¥,")
+_CURRENCY_CHARS = str.maketrans("", "", "$€£¥,%")
+"""Unit decoration stripped before parsing. '%' is included so a score column that mixes '53%'
+with plain 53 still coerces: the magnitude is preserved ('53%' -> 53.0), and rescaling to a 0-1
+fraction remains the separate, explicit job of normalize_percentage."""
 
 
 @dataclass

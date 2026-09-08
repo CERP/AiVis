@@ -44,7 +44,9 @@ class DatasetVersion(TimestampedModel, table=True):
     row_count: int = Field(default=0)
     column_count: int = Field(default=0)
     is_raw: bool = Field(default=False)
-    parent_version_id: uuid.UUID | None = Field(default=None, foreign_key="dataset_versions.id")
+    parent_version_id: uuid.UUID | None = Field(
+        default=None, foreign_key="dataset_versions.id", ondelete="CASCADE"
+    )
 
     dataset: Dataset = Relationship(back_populates="versions")
     columns: list["DatasetColumn"] = Relationship(

@@ -75,3 +75,30 @@ def test_cleaned_sample_must_match_recipe() -> None:
         [{"__row_index": 0, "section": "invented"}],
     )
     assert any("inconsistent" in error for error in result.validation_errors)
+
+
+def test_sentinel_constant_fill_is_rejected_on_a_measurement_column() -> None:
+    """"null -> 0" on a score column is the classic imputation mistake: 0 is in the valid 0-100
+    range, so once written it is indistinguishable from a real result, and it drags every
+    statistic the insight engine derives."""
+    frame = pl.DataFrame({"quiz_1": [55.0, 77.0, 98.0, None]})
+    result = execute_recipe(frame, [step("fill_missing", "quiz_1", method="constant", value=0)])
+    assert any("outside its observed range" in error for error in result.validation_errors)
+    assert result.dataframe["quiz_1"].to_list() == [55.0, 77.0, 98.0, None]
+
+
+def test_constant_fill_is_allowed_when_the_column_already_records_that_value() -> None:
+    """A count column that genuinely contains zeros can still be zero-filled -- absent really
+    does mean none there, and the guard must not block it."""
+    frame = pl.DataFrame({"orders": [0.0, 3.0, 7.0, None]})
+    result = execute_recipe(frame, [step("fill_missing", "orders", method="constant", value=0)])
+    assert result.validation_errors == []
+    assert result.dataframe["orders"].to_list() == [0.0, 3.0, 7.0, 0.0]
+
+
+@pytest.mark.parametrize("method", ["median", "mean"])
+def test_distribution_preserving_imputation_stays_supported(method: str) -> None:
+    frame = pl.DataFrame({"quiz_1": [55.0, 77.0, 98.0, None]})
+    result = execute_recipe(frame, [step("fill_missing", "quiz_1", method=method)])
+    assert result.validation_errors == []
+    assert result.dataframe["quiz_1"].null_count() == 0

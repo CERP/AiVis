@@ -46,8 +46,9 @@ describe("DatasetDiffGrid", () => {
     const onConfirm = vi.fn();
     render(<DatasetDiffGrid datasetId="dataset-1" workflow={workflow} onConfirm={onConfirm} />);
 
-    expect(screen.getByText(/Quality score 65 → 91/)).toBeInTheDocument();
-    expect(screen.getByText("After (Gemini-cleaned)")).toBeInTheDocument();
+    expect(screen.getByText("65")).toBeInTheDocument();
+    expect(screen.getByText("91")).toBeInTheDocument();
+    expect(screen.getByText("Gemini-cleaned")).toBeInTheDocument();
 
     fireEvent.click(screen.getAllByRole("button", { name: "Make Graphs" })[0]);
     expect(screen.getByText(/original dataset, which contains identified/)).toBeInTheDocument();
@@ -70,5 +71,38 @@ describe("DatasetDiffGrid", () => {
     );
     expect(screen.getByRole("alert")).toHaveTextContent("data loss");
     expect(screen.getAllByRole("button", { name: "Make Graphs" })[1]).toBeDisabled();
+  });
+});
+
+describe("whitespace-only differences", () => {
+  const withName = (before: unknown, after: unknown): ValidationWorkflowResponse => ({
+    ...workflow,
+    columns: ["student"],
+    before: { rows: [{ student: before }] },
+    after: { rows: [{ student: after }] },
+    anomalies: [],
+  });
+
+  it("renders padding as middots so a trim step shows its evidence", () => {
+    // Without this the two panels paint identically and the change highlight looks arbitrary.
+    render(<DatasetDiffGrid datasetId="d" workflow={withName("  Hira Shah  ", "Hira Shah")} onConfirm={vi.fn()} />);
+    expect(screen.getAllByTitle("2 whitespace characters")).toHaveLength(2);
+  });
+
+  it("leaves values without padding unmarked", () => {
+    render(<DatasetDiffGrid datasetId="d" workflow={withName("Ahmed Khan", "Ahmed Khan")} onConfirm={vi.fn()} />);
+    expect(screen.queryByTitle(/whitespace character/)).toBeNull();
+  });
+
+  it("counts an all-whitespace value once rather than at both ends", () => {
+    render(<DatasetDiffGrid datasetId="d" workflow={withName("   ", "")} onConfirm={vi.fn()} />);
+    const marks = screen.getAllByTitle("3 whitespace characters");
+    expect(marks).toHaveLength(1);
+    expect(marks[0].textContent).toBe("···");
+  });
+
+  it("still renders nulls as null", () => {
+    render(<DatasetDiffGrid datasetId="d" workflow={withName(null, null)} onConfirm={vi.fn()} />);
+    expect(screen.getAllByText("null")).toHaveLength(2);
   });
 });

@@ -1,5 +1,6 @@
 "use client";
 
+import { Check } from "lucide-react";
 import Link from "next/link";
 
 import { cn } from "@/lib/utils";
@@ -9,8 +10,8 @@ export type PipelineStep = "upload" | "profile" | "recommend" | "studio";
 const STEPS: { id: PipelineStep; label: string }[] = [
   { id: "upload", label: "Upload" },
   { id: "profile", label: "Profile" },
-  { id: "recommend", label: "Recommend" },
-  { id: "studio", label: "Studio" },
+  { id: "recommend", label: "Review cleaning" },
+  { id: "studio", label: "Visualize" },
 ];
 
 export function PipelineStepper({
@@ -32,22 +33,37 @@ export function PipelineStepper({
   };
 
   return (
-    <div className="flex h-[52px] items-center gap-6 overflow-x-auto border-b border-border bg-surface px-7">
-      {STEPS.map((step, i) => {
+    <div className="border-b border-border bg-surface/70">
+      <div className="mx-auto flex h-[58px] max-w-[1320px] items-center overflow-x-auto px-5 sm:px-7">
+        {STEPS.map((step, i) => {
         const isActive = step.id === current;
         const isDone = i < currentIndex;
         const href = hrefFor(step.id);
         const content = (
-          <span className="flex shrink-0 items-center gap-2 whitespace-nowrap text-sm font-medium">
+          <span className="flex shrink-0 items-center whitespace-nowrap text-[13px] font-medium">
             <span
               className={cn(
-                "block h-1.5 w-1.5 shrink-0 rounded-full",
-                isDone ? "bg-positive-accent" : isActive ? "bg-accent" : "bg-border-strong"
+                "mr-2 flex h-6 w-6 shrink-0 items-center justify-center rounded-full border text-[11px] font-bold",
+                isDone
+                  ? "border-positive-accent bg-positive-accent text-white"
+                  : isActive
+                    ? "border-accent bg-accent text-white shadow-sm shadow-accent/20"
+                    : "border-border-strong bg-surface text-subtle-foreground"
               )}
-            />
+            >
+              {isDone ? <Check aria-hidden className="h-3.5 w-3.5" /> : i + 1}
+            </span>
             <span className={isActive ? "text-foreground" : "text-muted-foreground"}>
               {step.label}
             </span>
+            {i < STEPS.length - 1 && (
+              <span
+                className={cn(
+                  "mx-4 h-px w-10 sm:w-16",
+                  isDone ? "bg-positive-accent" : "bg-border-strong"
+                )}
+              />
+            )}
           </span>
         );
         return href && !isActive ? (
@@ -59,7 +75,8 @@ export function PipelineStepper({
             {content}
           </span>
         );
-      })}
+        })}
+      </div>
     </div>
   );
 }

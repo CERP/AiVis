@@ -168,6 +168,34 @@ def _synthetic_result(series: pl.Series) -> Any:
     })()
 
 
+def _reject_out_of_range_constant(series: pl.Series, column: str, value: Any) -> None:
+    """Blocks a sentinel imputation like "null -> 0" on a measurement column.
+
+    A constant outside the observed spread is not a neutral placeholder: once written it is
+    indistinguishable from a genuine reading, and because it sits past an edge of the
+    distribution it drags the mean, distorts correlations, and reads as a true outlier to the
+    IQR detector. Filling within the observed range is left alone (median/mean imputation is
+    the supported path), as is a constant the column already contains -- so "null -> 0" still
+    works for a count column that genuinely records zeros.
+    """
+    if not series.dtype.is_numeric() or isinstance(value, bool):
+        return
+    if not isinstance(value, (int, float)):
+        return
+    non_null = series.drop_nulls()
+    if not len(non_null):
+        return
+    low, high = non_null.min(), non_null.max()
+    if low <= value <= high:
+        return
+    raise ValueError(
+        f"fill_missing would put {value} in '{column}', outside its observed range "
+        f"[{low}, {high}] -- an imputed value the column never held cannot be told apart from a "
+        f"real one and skews means, correlations, and outlier detection. Use median or mean, "
+        f"or leave the values null"
+    )
+
+
 def _apply_step(
     df: pl.DataFrame, step: DynamicTransformStep
 ) -> tuple[pl.DataFrame, dict[str, Any]]:
@@ -219,6 +247,8 @@ def _apply_step(
             raise ValueError("fill_missing requires a compatible constant, mean, median, or mode")
         if value is None:
             raise ValueError("fill_missing could not determine a replacement value")
+        if method == "constant":
+            _reject_out_of_range_constant(series, column, value)
         transformed = _synthetic_result(series.fill_null(value))
 
     if transformed.invalid_count:
@@ -294,15 +324,21 @@ def execute_recipe(
 
 
 async def get_or_create_audit(
-    session: AsyncSession, dataset_id: uuid.UUID, preview_limit: int = 100
+    session: AsyncSession, dataset_id: uuid.UUID, preview_limit: int = 100,
+    refresh: bool = False,
 ) -> DatasetValidationAudit:
+    """An audit is cached indefinitely against its source version, since re-running it costs a
+    Gemini call. `refresh` re-audits anyway -- needed when a stored audit has gone stale (the
+    recipe engine changed under it) or when Gemini simply had a bad run. The new audit supersedes
+    the old one by recency rather than deleting it, so the earlier verdict stays auditable.
+    """
     versions = await DatasetVersionRepository(session).list_for_dataset(dataset_id)
     source = next((version for version in versions if version.is_raw), None)
     if source is None:
         raise WorkflowValidationError("Original dataset version was not found")
     repo = DatasetValidationAuditRepository(session)
     cached = await repo.get_latest_for_source(dataset_id, source.id)
-    if cached is not None:
+    if cached is not None and not refresh:
         return cached
 
     df = await _load_dataframe(source)

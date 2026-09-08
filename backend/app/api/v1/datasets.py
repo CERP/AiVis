@@ -425,6 +425,7 @@ async def get_dataset_rows(
 async def get_validation_workflow(
     dataset_id: uuid.UUID,
     limit: int = 100,
+    refresh: bool = False,
     organization_id: uuid.UUID = Depends(get_current_organization_id),
     session: AsyncSession = Depends(get_session),
 ) -> ValidationWorkflowResponse:
@@ -438,7 +439,7 @@ async def get_validation_workflow(
     from app.services.validation_workflow import WorkflowValidationError, get_or_create_audit
 
     try:
-        audit = await get_or_create_audit(session, dataset_id, limit)
+        audit = await get_or_create_audit(session, dataset_id, limit, refresh=refresh)
         report = DatasetAuditReport.model_validate(audit.report)
         return ValidationWorkflowResponse(
             audit_id=audit.id,
