@@ -27,3 +27,11 @@ export function login(payload: { email: string; password: string }) {
 export function me() {
   return apiClient.get<UserResponse>("/api/auth/me");
 }
+
+export function updateProfile(full_name: string) {
+  return apiClient.patch<UserResponse>("/api/auth/me", { full_name });
+}
+
+export function changePassword(payload: { current_password: string; new_password: string }) {
+  return apiClient.post<void>("/api/auth/password", payload);
+}

@@ -1,24 +1,22 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 
 /** ResizeObserver-driven container sizing, so every D3 chart is responsive by construction
  * rather than each one re-implementing (or forgetting) width tracking. */
 export function useChartSize(defaultHeight = 320) {
-  const ref = useRef<HTMLDivElement>(null);
+  const [element, ref] = useState<HTMLDivElement | null>(null);
   const [size, setSize] = useState({ width: 0, height: defaultHeight });
 
   useEffect(() => {
-    const element = ref.current;
     if (!element) return;
     const observer = new ResizeObserver((entries) => {
       const rect = entries[0]?.contentRect;
       if (rect) setSize({ width: rect.width, height: defaultHeight });
     });
     observer.observe(element);
-    setSize({ width: element.clientWidth, height: defaultHeight });
     return () => observer.disconnect();
-  }, [defaultHeight]);
+  }, [defaultHeight, element]);
 
   return { ref, ...size };
 }
