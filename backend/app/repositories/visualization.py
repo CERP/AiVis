@@ -15,6 +15,19 @@ class VisualizationRepository(BaseRepository[Visualization]):
         )
         return list(result.all())
 
+    async def list_favorites_for_dataset_versions(
+        self, dataset_version_ids: list[uuid.UUID]
+    ) -> list[Visualization]:
+        if not dataset_version_ids:
+            return []
+        result = await self.session.exec(
+            select(Visualization)
+            .where(Visualization.dataset_version_id.in_(dataset_version_ids))
+            .where(Visualization.is_favorite.is_(True))
+            .order_by(Visualization.created_at.desc())
+        )
+        return list(result.all())
+
 
 class VisualizationVersionRepository(BaseRepository[VisualizationVersion]):
     model = VisualizationVersion

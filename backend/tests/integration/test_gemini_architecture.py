@@ -1,7 +1,8 @@
 """Audit test suite for the Gemini-first recommendation architecture. Verifies, against the
 real FastAPI app + DB (not isolated unit fakes), the three claims the architecture audit is
 required to prove:
-  1. The recommendation count is hard-capped at 8, even for a wide dataset.
+  1. The recommendation count stays well under the safety-net cap for a wide dataset -- no
+     combinatorial explosion, even though there's no longer a round-number display cap.
   2. Gemini's SDK is actually invoked during the analysis pipeline, with schema-constrained
      output, and its output can reach the final recommendation list.
   3. There is currently no POST /api/v1/datasets/{id}/clean/preview endpoint -- that part of
@@ -17,7 +18,7 @@ from httpx import ASGITransport, AsyncClient
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.ai.base import AIProvider, AIProviderError
-from app.ai.schemas import AnalyticalFindings, ChartRecommendation, ChartRecommendations
+from app.ai.schemas import AnalysisCategory, AnalyticalFindings, ChartRecommendation, ChartRecommendations
 from app.core.db import get_session
 from app.main import app
 from app.repositories.analysis import AnalysisRepository
@@ -94,6 +95,7 @@ class FakeChartRecProvider(AIProvider):
                     # guaranteed not to collide with (and lose to) a Story-derived duplicate.
                     ChartRecommendation(
                         rank=1,
+                        category=AnalysisCategory.TREND,
                         chart_type="bump",
                         title="Revenue rank over time by product",
                         description="desc",
@@ -109,7 +111,7 @@ class FakeChartRecProvider(AIProvider):
         return AnalyticalFindings(findings=[])
 
 
-async def test_recommendation_count_never_exceeds_eight_for_wide_dataset(
+async def test_recommendation_count_stays_bounded_for_wide_dataset(
     client: AsyncClient, session: AsyncSession, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setattr(
@@ -131,7 +133,7 @@ async def test_recommendation_count_never_exceeds_eight_for_wide_dataset(
         body = resp.json()
         assert body["status"] == "ready", body
         recs = body["recommendations"]["top"]
-        assert len(recs) <= 8, f"expected <=8, got {len(recs)}"
+        assert len(recs) <= 60, f"expected <=60 (safety-net cap), got {len(recs)}"
         assert len(recs) < 100, "old combinatorial-loop behavior would have produced 100+"
 
 
@@ -195,7 +197,7 @@ async def test_ai_provider_failure_degrades_to_deterministic_only_never_crashes_
         body = resp.json()
         assert body["status"] == "ready"
         recs = body["recommendations"]["top"]
-        assert len(recs) <= 8
+        assert len(recs) <= 60
         assert all(r["spec"]["metadata"]["generated_by"] == "deterministic" for r in recs)
 
 

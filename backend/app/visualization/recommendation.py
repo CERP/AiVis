@@ -12,7 +12,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from app.ai.schemas import AnalyticalFinding, ChartRecommendation
-from app.models.insight import Story
+from app.models.insight import Insight, Story
 from app.visualization.spec import (
     Aggregation,
     Encoding,
@@ -88,6 +88,7 @@ class VisualizationRecommendation:
     description: str
     spec: VisualizationSpec
     confidence: float
+    category: str = "other"
 
 
 def _encoding_type_for(semantic_type: str | None) -> EncodingType | None:
@@ -302,6 +303,7 @@ def generate_recommendations(
     dataset_version_id: str,
     ai_findings: list[AnalyticalFinding] | None = None,
     gemini_chart_recommendations: list[ChartRecommendation] | None = None,
+    insights: list[Insight] | None = None,
 ) -> list[VisualizationRecommendation]:
     """AI-first priority: valid Gemini-sourced candidates (the explicit chart-recommendation
     engine, then the advisory findings engine) always rank above deterministic Story-derived
@@ -309,7 +311,11 @@ def generate_recommendations(
     like a Story-derived one, so a hallucinated column can never reach the user -- but once
     validated, a Gemini candidate is never outranked or dedup-evicted by a Story candidate.
     Deterministic Stories only fill remaining slots once every valid Gemini candidate has a
-    seat -- see truncate_to_top() for the top-8 cutoff this ordering feeds into."""
+    seat. Every candidate also carries a `category` (trend/comparison/distribution/relationship/
+    ranking/composition/anomaly/other) so the frontend can group the full, uncapped result
+    instead of showing one flat list -- see truncate_to_top() for the safety-net cap this
+    ordering feeds into."""
+    insight_category = {str(insight.id): insight.type.value for insight in insights or []}
     seen_keys: set[tuple] = set()
     ai_tier: list[VisualizationRecommendation] = []
     deterministic_tier: list[VisualizationRecommendation] = []
@@ -340,6 +346,7 @@ def generate_recommendations(
                 description=rec.description,
                 spec=spec,
                 confidence=rec.confidence,
+                category=rec.category.value,
             )
         )
 
@@ -375,6 +382,7 @@ def generate_recommendations(
                 description=f"AI-identified {finding.type.value}: {finding.description}",
                 spec=spec,
                 confidence=finding.confidence,
+                category=finding.type.value,
             )
         )
 
@@ -406,6 +414,7 @@ def generate_recommendations(
                 description=story.description,
                 spec=spec,
                 confidence=story.confidence,
+                category=insight_category.get(str(story.insight_id), "other"),
             )
         )
 
@@ -414,26 +423,45 @@ def generate_recommendations(
     return ai_tier + deterministic_tier
 
 
-MAX_RECOMMENDATIONS = 8
+# Safety-net cap, not a display target -- the UI now shows every recommendation grouped by
+# category (see group_by_category()) instead of a flat top-8 grid, so this only guards against a
+# pathological dataset producing an unbounded candidate list (30 Gemini + 20 AI findings + an
+# unbounded deterministic tail).
+MAX_RECOMMENDATIONS = 60
+
+_CATEGORY_DISPLAY_ORDER = [
+    "trend", "relationship", "comparison", "ranking",
+    "distribution", "composition", "hierarchy", "flow",
+    "anomaly", "change", "seasonality", "derived_metric", "other",
+]
 
 
 def truncate_to_top(
     recommendations: list[VisualizationRecommendation], *, top_n: int = MAX_RECOMMENDATIONS
 ) -> list[VisualizationRecommendation]:
-    """Hard cap -- never return more than `top_n` recommendations. No "Explore more" overflow
-    list: a dataset either supports up to `top_n` meaningfully-different charts or fewer."""
+    """Safety-net cap -- never return more than `top_n` recommendations. In practice this is a
+    no-op for real datasets; it only guards against pathological input sizes."""
     return recommendations[:top_n]
 
 
-def recommendation_shortfall_reason(count: int, *, top_n: int = MAX_RECOMMENDATIONS) -> str | None:
+def recommendation_shortfall_reason(count: int) -> str | None:
     """Never fabricate filler charts just to hit a round number -- when a dataset genuinely
-    can't support `top_n` meaningfully-different visualizations, say so explicitly instead of
-    padding the list."""
-    if count >= top_n:
-        return None
+    can't support any confident, non-redundant visualization, say so explicitly."""
     if count == 0:
         return "This dataset didn't produce any confident, non-redundant visualization candidates."
-    return (
-        f"Only {count} meaningfully different visualization{'s' if count != 1 else ''} could be "
-        "generated for this dataset without duplicating the same analytical question."
-    )
+    return None
+
+
+def group_by_category(
+    recommendations: list[VisualizationRecommendation],
+) -> list[tuple[str, list[VisualizationRecommendation]]]:
+    """Groups recommendations by analysis category for display, preserving each category's
+    internal AI-first/confidence ordering from generate_recommendations(). Category order
+    follows _CATEGORY_DISPLAY_ORDER, with any unrecognised category appended at the end."""
+    grouped: dict[str, list[VisualizationRecommendation]] = {}
+    for rec in recommendations:
+        grouped.setdefault(rec.category, []).append(rec)
+
+    ordered_keys = [c for c in _CATEGORY_DISPLAY_ORDER if c in grouped]
+    ordered_keys += [c for c in grouped if c not in _CATEGORY_DISPLAY_ORDER]
+    return [(category, grouped[category]) for category in ordered_keys]

@@ -147,7 +147,7 @@ export default function LandingPage() {
               student_performance_2025.csv · 48,236 rows
             </span>
           </div>
-          <div className="rounded-[10px] bg-ink p-5">
+          <div className="rounded-[10px] bg-[#14151a] p-5">
             <div className="mb-2.5 font-mono text-[11px] text-subtle-foreground">
               RECOMMENDED · confidence 92%
             </div>
@@ -271,7 +271,7 @@ export default function LandingPage() {
                 key={step.n}
                 className={
                   step.inverted
-                    ? "rounded-[14px] border border-ink bg-ink p-6"
+                    ? "rounded-[14px] border border-border-strong bg-[#14151a] p-6"
                     : "rounded-[14px] border border-border bg-surface p-6"
                 }
               >

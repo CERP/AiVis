@@ -9,6 +9,7 @@ export interface Visualization {
   story_id: string | null;
   title: string;
   current_version_id: string | null;
+  is_favorite: boolean;
 }
 
 export interface VisualizationVersion {
@@ -59,4 +60,10 @@ export function applyCommand(id: string, command: VisualizationCommand) {
 
 export function undoVisualization(id: string) {
   return apiClient.post<VisualizationVersion>(`/api/visualizations/${id}/undo`);
+}
+
+export function setVisualizationFavorite(id: string, isFavorite: boolean) {
+  return apiClient.patch<Visualization>(`/api/visualizations/${id}/favorite`, {
+    is_favorite: isFavorite,
+  });
 }

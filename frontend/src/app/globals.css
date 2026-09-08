@@ -42,18 +42,19 @@
 }
 
 .dark {
+  color-scheme: dark;
   --background: #0b0c10;
   --foreground: #ece9f5;
-  --surface: #14151a;
-  --surface-muted: #1b1c22;
+  --surface: #17181f;
+  --surface-muted: #20222c;
   --border: #2a2c34;
   --border-strong: #3a3c46;
   --muted-foreground: #a4a6b3;
-  --subtle-foreground: #8b8d99;
+  --subtle-foreground: #a0a3b4;
   --accent: #7a6bf0;
   --accent-hover: #8f82f3;
   --accent-foreground: #0b0c10;
-  --accent-muted: #241f47;
+  --accent-muted: #252139;
   --ink: #ece9f5;
   --panel: #000000;
   --positive: #4fd6b0;
@@ -73,6 +74,29 @@
   --chart-4: #5aa8e8;
   --chart-5: #d465ab;
   --chart-6: #9497a6;
+}
+
+.scroll-header-bar {
+  width: 100%;
+  height: 72px;
+  margin-inline: auto;
+  background: #08080a;
+  border-bottom: 1px solid #ffffff18;
+  transition: width 280ms ease, height 280ms ease, border-radius 280ms ease, transform 280ms ease, box-shadow 280ms ease;
+}
+
+.scroll-header[data-compact="true"] > .scroll-header-bar {
+  width: min(980px, calc(100% - 24px));
+  height: 58px;
+  transform: translateY(8px);
+  border-radius: 22px;
+  box-shadow: 0 12px 36px #00000030;
+}
+
+.scroll-header a:focus-visible,
+.scroll-header button:focus-visible {
+  outline: 2px solid #b5a4ff;
+  outline-offset: 3px;
 }
 
 @theme inline {

@@ -1,11 +1,12 @@
-"""Gemini's role as the chart recommendation engine: acting as a senior BI analyst, propose the
-top analytical questions a dataset supports (trend, distribution, anomaly, relationship,
-ranking) and a concrete candidate chart for each -- with an explicit field-to-channel mapping
-(x_field/y_field/color_field/aggregate), not just a bag of relevant fields. This is advisory
-input to the deterministic recommendation engine (app/visualization/recommendation.py), which
-remains the sole source of truth for what actually gets rendered: every field reference is
-re-validated against the real schema, every chart type against the implemented registry, and
-the result is hard-capped at 8 recommendations."""
+"""Gemini's role as the chart recommendation engine: acting as a senior BI analyst, propose every
+distinct analytical question a dataset supports (trend, distribution, anomaly, relationship,
+ranking, composition, comparison) and a concrete candidate chart for each -- with an explicit
+field-to-channel mapping (x_field/y_field/color_field/aggregate) and a category tag, not just a
+bag of relevant fields. This is advisory input to the deterministic recommendation engine
+(app/visualization/recommendation.py), which remains the sole source of truth for what actually
+gets rendered: every field reference is re-validated against the real schema, every chart type
+against the implemented registry, and the result is grouped by category, not truncated to a
+round number."""
 
 from __future__ import annotations
 
@@ -33,13 +34,14 @@ _SYSTEM_INSTRUCTION = (
 
     # --- Task ---
     "TASK\n"
-    "Formulate the top analytical questions this dataset supports -- trend analysis, "
-    "distribution, anomalies, relationships, rankings, comparisons -- and for each one propose "
-    "exactly one candidate chart. Propose at most 8 recommendations total, ranked 1 (most "
-    "important) through however many you propose. Do not propose two charts that answer "
-    "essentially the same question with a different chart type; each recommendation must earn "
-    "its place by covering a distinct analytical angle. If the dataset genuinely supports fewer "
-    "than 8 well-grounded, non-redundant charts, return fewer -- never pad the list.\n\n"
+    "Formulate every distinct analytical question this dataset genuinely supports -- trend "
+    "analysis, distribution, anomalies, relationships, rankings, comparisons, composition -- and "
+    "for each one propose exactly one candidate chart. Do not artificially cap the count and do "
+    "not pad the list to hit a round number: propose as many well-grounded, non-redundant charts "
+    "as the dataset supports, up to 30, ranked 1 (most important) through however many you "
+    "propose. Do not propose two charts that answer essentially the same question with a "
+    "different chart type; each recommendation must earn its place by covering a distinct "
+    "analytical angle.\n\n"
 
     # --- Field mapping ---
     "FIELD MAPPING\n"
@@ -53,6 +55,9 @@ _SYSTEM_INSTRUCTION = (
     "- aggregate: how y_field should be aggregated per x_field/color_field group (sum, mean, "
     "median, count, min, max) -- omit only when no aggregation applies (e.g. a scatter of two "
     "raw measures, or a single-field distribution chart which uses x_field alone)\n"
+    "- category: which analytical question this chart answers -- trend, comparison, "
+    "distribution, relationship, ranking, composition, or anomaly; use other only when nothing "
+    "else genuinely fits\n"
     "Never invent, pluralise, abbreviate, translate, or correct the spelling of a field name. "
     "Only reference fields that literally appear in the input.\n\n"
 

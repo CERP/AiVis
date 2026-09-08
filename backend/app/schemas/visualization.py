@@ -17,6 +17,10 @@ class ApplyCommandRequest(BaseModel):
     command: VisualizationCommand
 
 
+class SetFavoriteRequest(BaseModel):
+    is_favorite: bool
+
+
 class NLEditRequest(BaseModel):
     query: str = Field(min_length=1, max_length=500)
 
@@ -29,6 +33,7 @@ class VisualizationResponse(BaseModel):
     story_id: uuid.UUID | None
     title: str
     current_version_id: uuid.UUID | None
+    is_favorite: bool
     created_at: datetime
 
     model_config = {"from_attributes": True}

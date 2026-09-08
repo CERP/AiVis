@@ -50,13 +50,28 @@ class Aggregate(StrEnum):
     MAX = "max"
 
 
+class AnalysisCategory(StrEnum):
+    """Which analytical question a recommended chart answers -- used to group recommendations
+    in the UI (trend charts together, comparisons together, etc.) instead of one flat list."""
+
+    TREND = "trend"
+    COMPARISON = "comparison"
+    DISTRIBUTION = "distribution"
+    RELATIONSHIP = "relationship"
+    RANKING = "ranking"
+    COMPOSITION = "composition"
+    ANOMALY = "anomaly"
+    OTHER = "other"
+
+
 class ChartRecommendation(BaseModel):
     """One candidate chart proposed by Gemini acting as a senior BI analyst. Every field
     reference is re-validated against the real dataset schema before it can become a
     VisualizationSpec (app/visualization/recommendation.py) -- a hallucinated column name is
     discarded, never fabricated into the response."""
 
-    rank: int = Field(ge=1, le=8)
+    rank: int = Field(ge=1, le=30)
+    category: AnalysisCategory
     chart_type: str = Field(max_length=50)
     title: str = Field(max_length=200)
     description: str = Field(max_length=500)
@@ -69,7 +84,7 @@ class ChartRecommendation(BaseModel):
 
 
 class ChartRecommendations(BaseModel):
-    recommendations: list[ChartRecommendation] = Field(max_length=8)
+    recommendations: list[ChartRecommendation] = Field(max_length=30)
 
 
 class StudioEditCommandType(StrEnum):

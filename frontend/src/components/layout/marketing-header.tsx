@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { ThemeToggle } from "@/components/layout/theme-toggle";
 import { UserMenu } from "@/components/layout/user-menu";
 import { useAuthStore } from "@/store/auth-store";
+import { ScrollHeader } from "./scroll-header";
 
 /** Product/How it works are in-page anchors on the landing page; from any other marketing
  * route they need the leading "/" so they navigate home first, then scroll. */
@@ -26,8 +27,8 @@ export function MarketingHeader() {
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
 
   return (
-    <header className="sticky top-0 z-40 px-4">
-      <div className="mx-auto flex h-[58px] max-w-[980px] items-center justify-between rounded-b-[22px] bg-[#08080a] px-4 shadow-[0_12px_36px_rgba(8,8,10,0.2)] sm:px-5">
+    <ScrollHeader>
+      <div className="scroll-header-bar flex items-center justify-between px-4 sm:px-7">
         <Link href="/" className="flex items-center gap-2.5 text-white">
           <span className="relative flex h-8 w-8 items-center justify-center rounded-[9px] bg-gradient-to-b from-[#9a83ff] to-[#6847ef] shadow-[inset_0_1px_0_rgba(255,255,255,0.35)]">
             <span className="h-2.5 w-2.5 rotate-45 rounded-[3px] bg-white" />
@@ -132,6 +133,6 @@ export function MarketingHeader() {
           )}
         </nav>
       )}
-    </header>
+    </ScrollHeader>
   );
 }

@@ -16,6 +16,9 @@ interface RecommendationCardProps {
   previewRows?: Record<string, unknown>[];
   onOpenStudio?: (recommendation: VisualizationRecommendation) => void;
   isOpeningStudio?: boolean;
+  isFavorite?: boolean;
+  isTogglingFavorite?: boolean;
+  onToggleFavorite?: (recommendation: VisualizationRecommendation) => void;
 }
 
 const CHART_TYPE_GLYPH: Record<string, string> = {
@@ -35,6 +38,9 @@ export function RecommendationCard({
   previewRows,
   onOpenStudio,
   isOpeningStudio,
+  isFavorite,
+  isTogglingFavorite,
+  onToggleFavorite,
 }: RecommendationCardProps) {
   const chartDef = getChartDefinition(recommendation.spec.chart_type);
   const confidencePct = Math.round(recommendation.confidence * 100);
@@ -71,7 +77,24 @@ export function RecommendationCard({
             <SectionHeading as="h3" className="text-lg">
               {recommendation.title}
             </SectionHeading>
-            <ConfidenceBadge pct={confidencePct} />
+            <div className="flex shrink-0 items-center gap-1.5">
+              {onToggleFavorite && (
+                <button
+                  type="button"
+                  aria-label={isFavorite ? "Remove from favorites" : "Save to favorites"}
+                  aria-pressed={!!isFavorite}
+                  disabled={isTogglingFavorite}
+                  onClick={() => onToggleFavorite(recommendation)}
+                  className={cn(
+                    "text-lg leading-none transition-colors disabled:opacity-50",
+                    isFavorite ? "text-accent" : "text-border-strong hover:text-accent"
+                  )}
+                >
+                  {isFavorite ? "★" : "☆"}
+                </button>
+              )}
+              <ConfidenceBadge pct={confidencePct} />
+            </div>
           </div>
           <ChartLabel className="text-muted-foreground">
             {chartDef?.label ?? recommendation.spec.chart_type}

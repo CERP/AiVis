@@ -113,7 +113,7 @@ async def test_full_pipeline_produces_validated_recommendations(
 
         recs = body["recommendations"]
         assert len(recs["top"]) > 0
-        assert len(recs["top"]) <= 8
+        assert len(recs["top"]) <= 60  # MAX_RECOMMENDATIONS safety-net cap
 
         for rec in recs["top"]:
             assert rec["spec"]["chart_type"]

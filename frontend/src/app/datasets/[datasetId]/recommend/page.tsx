@@ -14,10 +14,16 @@ import { RecommendationCard } from "@/components/recommendations/recommendation-
 import { ThemeCard } from "@/components/recommendations/theme-card";
 import { VisualizationRenderer } from "@/components/visualization/visualization-renderer";
 import { DatasetDiffGrid } from "@/components/datasets/dataset-diff-grid";
-import { ANALYSIS_STAGE_LABELS, getAnalysis } from "@/lib/api/analysis";
-import { getDataset, getDatasetRows, getValidationWorkflow, applyValidationWorkflow } from "@/lib/api/datasets";
+import { ANALYSIS_STAGE_LABELS, categoryLabel, getAnalysis } from "@/lib/api/analysis";
+import {
+  getDataset,
+  getDatasetFavorites,
+  getDatasetRows,
+  getValidationWorkflow,
+  applyValidationWorkflow,
+} from "@/lib/api/datasets";
 import { getThemeRecommendations } from "@/lib/api/theme";
-import { createVisualization } from "@/lib/api/visualizations";
+import { createVisualization, setVisualizationFavorite } from "@/lib/api/visualizations";
 import type { VisualizationRecommendation } from "@/lib/api/types";
 import { getChartDefinition } from "@/lib/visualization/registry";
 import { ApiError } from "@/lib/api/client";
@@ -31,6 +37,7 @@ export default function RecommendPage() {
   const [tab, setTab] = useState<"curated" | "theme">("curated");
   const [previewRec, setPreviewRec] = useState<VisualizationRecommendation | null>(null);
   const [workflowChosen, setWorkflowChosen] = useState(false);
+  const [favoritedStoryIds, setFavoritedStoryIds] = useState<Set<string>>(new Set());
 
   const datasetQuery = useQuery({
     queryKey: ["dataset", datasetId],
@@ -102,6 +109,38 @@ export default function RecommendPage() {
   const isOpeningRecommendation = (recommendation: VisualizationRecommendation) =>
     openInStudio.isPending && openInStudio.variables?.story_id === recommendation.story_id;
 
+  const favoritesQuery = useQuery({
+    queryKey: ["dataset-favorites", datasetId],
+    queryFn: () => getDatasetFavorites(datasetId),
+    enabled: isReady,
+  });
+
+  const favoriteMutation = useMutation({
+    mutationFn: async (recommendation: VisualizationRecommendation) => {
+      if (!datasetQuery.data) throw new Error("Dataset not loaded yet");
+      const visualization = await createVisualization(datasetQuery.data.project_id, {
+        title: recommendation.title,
+        story_id: isUuid(recommendation.story_id) ? recommendation.story_id : null,
+        spec: recommendation.spec,
+      });
+      return setVisualizationFavorite(visualization.id, true);
+    },
+    onSuccess: (_visualization, recommendation) => {
+      setFavoritedStoryIds((prev) => new Set(prev).add(recommendation.story_id));
+      queryClient.invalidateQueries({ queryKey: ["dataset-favorites", datasetId] });
+    },
+  });
+
+  const removeFavoriteMutation = useMutation({
+    mutationFn: (visualizationId: string) => setVisualizationFavorite(visualizationId, false),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["dataset-favorites", datasetId] });
+    },
+  });
+
+  const isTogglingFavorite = (recommendation: VisualizationRecommendation) =>
+    favoriteMutation.isPending && favoriteMutation.variables?.story_id === recommendation.story_id;
+
   const handleConfirmWorkflow = async (version: "raw" | "cleaned") => {
     await applyWorkflowMutation.mutateAsync(version === "raw" ? "original" : "cleaned");
   };
@@ -111,6 +150,7 @@ export default function RecommendPage() {
   const stageLabels = stageEntries.map(([key]) => ANALYSIS_STAGE_LABELS[key] ?? key);
 
   const recommendations = analysis?.recommendations?.top ?? [];
+  const recommendationGroups = analysis?.recommendations?.groups ?? [];
   const themes = themesQuery.data ? [...themesQuery.data.top, ...themesQuery.data.rest] : [];
 
   const showWorkflowDiff =
@@ -177,6 +217,41 @@ export default function RecommendPage() {
 
                     {tab === "curated" && (
                       <>
+                        {!!favoritesQuery.data?.length && (
+                          <div className="mb-7 rounded-xl border border-border-strong bg-surface-muted p-4">
+                            <h3 className="mb-3 font-headline text-[13px] font-bold uppercase tracking-[0.06em] text-subtle-foreground">
+                              ★ Your favorites
+                            </h3>
+                            <div className="flex flex-wrap gap-2">
+                              {favoritesQuery.data.map((viz) => (
+                                <div
+                                  key={viz.id}
+                                  className="flex items-center gap-2 rounded-full border border-border-strong bg-surface px-3 py-1.5 text-sm"
+                                >
+                                  <button
+                                    type="button"
+                                    className="font-medium hover:underline"
+                                    onClick={() => router.push(`/studio/${viz.id}`)}
+                                  >
+                                    {viz.title}
+                                  </button>
+                                  <button
+                                    type="button"
+                                    aria-label="Remove from favorites"
+                                    disabled={
+                                      removeFavoriteMutation.isPending &&
+                                      removeFavoriteMutation.variables === viz.id
+                                    }
+                                    onClick={() => removeFavoriteMutation.mutate(viz.id)}
+                                    className="text-accent hover:opacity-70 disabled:opacity-50"
+                                  >
+                                    ★
+                                  </button>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
                         {analysis?.recommendations?.shortfall_reason && (
                           <p className="mb-5 text-sm text-muted-foreground">
                             {analysis.recommendations.shortfall_reason}
@@ -197,36 +272,49 @@ export default function RecommendPage() {
                                   : "please try again."}
                               </p>
                             )}
-                            <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">
-                            {recommendations.map((rec, index) => (
-                              <div key={rec.story_id} className="flex flex-col gap-2.5">
-                                <RecommendationCard
-                                  recommendation={rec}
-                                  index={index}
-                                  previewRows={rowsQuery.data?.rows}
-                                />
-                                <div className="flex gap-2">
-                                  <Button
-                                    size="sm"
-                                    variant="outline"
-                                    className="flex-1"
-                                    onClick={() => setPreviewRec(rec)}
-                                  >
-                                    Preview
-                                  </Button>
-                                  <Button
-                                    size="sm"
-                                    variant="default"
-                                    className="flex-1"
-                                    disabled={openInStudio.isPending}
-                                    onClick={() => openInStudio.mutate(rec)}
-                                  >
-                                    {isOpeningRecommendation(rec) ? "Opening…" : "Open in studio"}
-                                  </Button>
+                            {recommendationGroups.map((group) => (
+                              <div key={group.category} className="mb-8 last:mb-0">
+                                <h3 className="mb-3 font-headline text-[15px] font-bold text-foreground">
+                                  {categoryLabel(group.category)}
+                                  <span className="ml-1.5 font-mono text-[12px] font-normal text-muted-foreground">
+                                    {group.recommendations.length}
+                                  </span>
+                                </h3>
+                                <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">
+                                  {group.recommendations.map((rec, index) => (
+                                    <div key={rec.story_id} className="flex flex-col gap-2.5">
+                                      <RecommendationCard
+                                        recommendation={rec}
+                                        index={index}
+                                        previewRows={rowsQuery.data?.rows}
+                                        isFavorite={favoritedStoryIds.has(rec.story_id)}
+                                        isTogglingFavorite={isTogglingFavorite(rec)}
+                                        onToggleFavorite={(r) => favoriteMutation.mutate(r)}
+                                      />
+                                      <div className="flex gap-2">
+                                        <Button
+                                          size="sm"
+                                          variant="outline"
+                                          className="flex-1"
+                                          onClick={() => setPreviewRec(rec)}
+                                        >
+                                          Preview
+                                        </Button>
+                                        <Button
+                                          size="sm"
+                                          variant="default"
+                                          className="flex-1"
+                                          disabled={openInStudio.isPending}
+                                          onClick={() => openInStudio.mutate(rec)}
+                                        >
+                                          {isOpeningRecommendation(rec) ? "Opening…" : "Open in studio"}
+                                        </Button>
+                                      </div>
+                                    </div>
+                                  ))}
                                 </div>
                               </div>
                             ))}
-                            </div>
                           </>
                         )}
                       </>

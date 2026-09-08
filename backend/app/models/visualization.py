@@ -23,6 +23,7 @@ class Visualization(TimestampedModel, table=True):
     story_id: uuid.UUID | None = Field(default=None, foreign_key="stories.id")
     title: str = Field(max_length=300)
     current_version_id: uuid.UUID | None = Field(default=None)
+    is_favorite: bool = Field(default=False, index=True)
 
     versions: list["VisualizationVersion"] = Relationship(back_populates="visualization")
 

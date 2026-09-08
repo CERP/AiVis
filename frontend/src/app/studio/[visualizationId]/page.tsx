@@ -64,7 +64,7 @@ const ANNOTATION_DESCRIPTIONS: Record<AnnotationType, string> = {
 
 const RIGHT_TABS = [
   { id: "mapping", label: "Mapping" },
-  { id: "filters", label: "Filters" },
+  { id: "filters", label: "Slicers" },
   { id: "notes", label: "Notes" },
   { id: "theme", label: "Theme" },
   { id: "export", label: "Export" },
@@ -416,7 +416,8 @@ export default function StudioPage() {
               {rightTab === "filters" && (
                 <div className="flex flex-col gap-3">
                   <p className="text-xs text-muted-foreground">
-                    Filters narrow the rows feeding this chart. Combined with AND.
+                    Slicers narrow the rows feeding this chart, combined with AND — pick a field
+                    to filter it by its actual values.
                   </p>
                   <FilterToolbar
                     filters={currentVersion?.spec.filters ?? []}

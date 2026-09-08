@@ -8,4 +8,5 @@ export interface VisualizationRecommendation {
   description: string;
   spec: VisualizationSpec;
   confidence: number;
+  category: string;
 }

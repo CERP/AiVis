@@ -21,6 +21,7 @@ from app.repositories.dataset import (
 )
 from app.repositories.insight import InsightRepository, StoryRepository
 from app.repositories.project import ProjectRepository
+from app.repositories.visualization import VisualizationRepository
 from app.schemas.analysis import AnalysisResponse
 from app.schemas.cleaning import (
     CleaningPreviewResponse,
@@ -33,6 +34,7 @@ from app.schemas.insight import InsightResponse
 from app.schemas.profile import ColumnProfileResponse, DatasetProfileResponse
 from app.schemas.rows import DatasetRowsResponse
 from app.schemas.story import StoryResponse
+from app.schemas.visualization import VisualizationResponse
 from app.schemas.workflow import (
     ValidationWorkflowResponse,
     WorkflowPreview,
@@ -419,6 +421,37 @@ async def get_dataset_rows(
         returned_row_count=len(rows),
         rows=rows,
     )
+
+
+@router.get("/{dataset_id}/favorites", response_model=list[VisualizationResponse])
+async def list_dataset_favorites(
+    dataset_id: uuid.UUID,
+    organization_id: uuid.UUID = Depends(get_current_organization_id),
+    session: AsyncSession = Depends(get_session),
+) -> list[VisualizationResponse]:
+    dataset = await DatasetRepository(session).get(dataset_id)
+    if dataset is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Dataset not found")
+    await _require_project(dataset.project_id, organization_id, session)
+
+    versions = await DatasetVersionRepository(session).list_for_dataset(dataset_id)
+    favorites = await VisualizationRepository(session).list_favorites_for_dataset_versions(
+        [v.id for v in versions]
+    )
+    return [
+        VisualizationResponse(
+            id=viz.id,
+            project_id=viz.project_id,
+            dataset_id=dataset_id,
+            dataset_version_id=viz.dataset_version_id,
+            story_id=viz.story_id,
+            title=viz.title,
+            current_version_id=viz.current_version_id,
+            is_favorite=viz.is_favorite,
+            created_at=viz.created_at,
+        )
+        for viz in favorites
+    ]
 
 
 @router.get("/{dataset_id}/validation-workflow", response_model=ValidationWorkflowResponse)

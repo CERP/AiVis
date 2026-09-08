@@ -1,4 +1,5 @@
 import { apiClient, ApiError } from "@/lib/api/client";
+import type { Visualization } from "@/lib/api/visualizations";
 import { useAuthStore } from "@/store/auth-store";
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
@@ -21,6 +22,10 @@ export function listDatasets(projectId: string) {
 
 export function getDataset(datasetId: string) {
   return apiClient.get<Dataset>(`/api/datasets/${datasetId}`);
+}
+
+export function getDatasetFavorites(datasetId: string) {
+  return apiClient.get<Visualization[]>(`/api/datasets/${datasetId}/favorites`);
 }
 
 export function uploadDataset(projectId: string, file: File) {

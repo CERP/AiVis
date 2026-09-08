@@ -103,12 +103,13 @@ def test_shortfall_reason_present_when_zero_recommendations() -> None:
     assert "any confident" in reason
 
 
-def test_shortfall_reason_absent_when_eight_or_more() -> None:
-    assert recommendation_shortfall_reason(8) is None
+def test_shortfall_reason_absent_when_any_recommendations_exist() -> None:
+    """No round-number target anymore -- any non-zero count is a fine outcome, never padded."""
+    assert recommendation_shortfall_reason(1) is None
     assert recommendation_shortfall_reason(12) is None
 
 
-def test_truncate_to_top_never_returns_more_than_eight() -> None:
+def test_truncate_to_top_keeps_all_distinct_findings_under_the_safety_cap() -> None:
     findings = [
         AnalyticalFinding(
             type=FindingType.OTHER,
@@ -122,4 +123,6 @@ def test_truncate_to_top_never_returns_more_than_eight() -> None:
     semantic_types = {**_SEMANTIC_TYPES, **{f"field_{i}": "categorical" for i in range(12)}}
     recs = generate_recommendations([], semantic_types, "v1", ai_findings=findings)
     top = truncate_to_top(recs)
-    assert len(top) <= 8
+    # Each finding pairs a distinct field with "revenue", so none collide in the redundancy
+    # filter -- all 12 survive, well under the safety-net cap.
+    assert len(top) == 12

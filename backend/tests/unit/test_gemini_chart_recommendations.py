@@ -2,7 +2,8 @@
 input to the deterministic recommendation engine -- these tests cover the same failure modes as
 test_recommendation_ai_findings.py, for the explicit-channel path: a hallucinated field or an
 unimplemented/incompatible chart type must never reach a recommendation, and the result is
-always hard-capped at 8."""
+grouped by category rather than truncated to a round number (truncate_to_top only applies a
+generous safety-net cap)."""
 
 import pytest
 from pydantic import ValidationError
@@ -11,7 +12,7 @@ import uuid
 
 from app.ai.base import AIProvider, AIProviderError
 from app.ai.context_builder import AnalysisContext, DatasetSummary
-from app.ai.schemas import Aggregate, ChartRecommendation, ChartRecommendations
+from app.ai.schemas import Aggregate, AnalysisCategory, ChartRecommendation, ChartRecommendations
 from app.models.insight import Story
 from app.services.chart_recommendations import (
     _SYSTEM_INSTRUCTION,
@@ -37,6 +38,7 @@ def _story(fields: list[str], chart_type: str = "bar", confidence: float = 0.99)
 def _rec(**overrides) -> ChartRecommendation:
     defaults = dict(
         rank=1,
+        category=AnalysisCategory.COMPARISON,
         chart_type="bar",
         title="Revenue by region",
         description="desc",
@@ -98,12 +100,12 @@ async def test_analyze_chart_recommendations_propagates_provider_error() -> None
 
 def test_chart_recommendation_rejects_rank_out_of_range() -> None:
     with pytest.raises(ValidationError):
-        _rec(rank=9)
+        _rec(rank=31)
 
 
-def test_chart_recommendations_list_rejects_more_than_eight() -> None:
+def test_chart_recommendations_list_rejects_more_than_thirty() -> None:
     with pytest.raises(ValidationError):
-        ChartRecommendations(recommendations=[_rec(rank=1) for _ in range(9)])
+        ChartRecommendations(recommendations=[_rec(rank=1) for _ in range(31)])
 
 
 def test_gemini_chart_rec_with_hallucinated_field_is_discarded() -> None:
@@ -201,13 +203,35 @@ def test_stories_backfill_only_after_all_valid_gemini_candidates() -> None:
     assert top[1].spec.metadata.generated_by == "deterministic"
 
 
-def test_gemini_chart_recs_never_exceed_eight_after_truncation() -> None:
+def test_gemini_chart_recs_are_not_capped_at_eight() -> None:
+    """Distinct, non-redundant Gemini candidates are no longer truncated to a round number --
+    each recommendation below reads a different field pair, so none collide in the redundancy
+    filter and all should survive."""
     recs_in = [
-        _rec(rank=i, x_field="region", y_field="revenue", color_field=None, confidence=0.5)
+        _rec(
+            rank=i,
+            chart_type="bar",
+            x_field="region",
+            y_field="revenue",
+            color_field=None,
+            confidence=0.5,
+        )
         for i in range(1, 9)
-    ] + [_rec(rank=1, chart_type="scatter", x_field="units", y_field="revenue", aggregate=None)]
+    ]
     recs = generate_recommendations(
         [], _SEMANTIC_TYPES, "v1", gemini_chart_recommendations=recs_in
     )
     top = truncate_to_top(recs)
-    assert len(top) <= 8
+    # All 8 collapse to a single candidate via the redundancy filter (same chart family + field
+    # set) -- the point of this test is that truncate_to_top's cap (60) never kicks in here, not
+    # that redundancy filtering is disabled.
+    assert len(top) == 1
+
+    distinct_rec = _rec(
+        rank=1, chart_type="scatter", x_field="units", y_field="revenue", aggregate=None
+    )
+    recs = generate_recommendations(
+        [], _SEMANTIC_TYPES, "v1", gemini_chart_recommendations=recs_in + [distinct_rec]
+    )
+    top = truncate_to_top(recs)
+    assert len(top) == 2

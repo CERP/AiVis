@@ -30,7 +30,7 @@ from app.models.dataset import DatasetVersion
 from app.repositories.dataset import DataProfileRepository, DatasetColumnRepository
 from app.repositories.insight import InsightRepository, StoryRepository
 from app.schemas.profile import ColumnProfileResponse, DatasetProfileResponse
-from app.schemas.recommendation import VisualizationRecommendationResponse
+from app.schemas.recommendation import RecommendationCategoryGroup, VisualizationRecommendationResponse
 from app.services.ai_findings import analyze_dataset_findings
 from app.services.chart_recommendations import analyze_chart_recommendations
 from app.services.insight_analysis import analyze_dataset_version
@@ -38,6 +38,7 @@ from app.services.storage import get_storage_service
 from app.services.story_analysis import generate_stories_for_version
 from app.visualization.recommendation import (
     generate_recommendations,
+    group_by_category,
     recommendation_shortfall_reason,
     truncate_to_top,
 )
@@ -194,6 +195,7 @@ async def run_analysis(session: AsyncSession, analysis: Analysis, version: Datas
             gemini_chart_recommendations=(
                 chart_recommendations.recommendations if chart_recommendations else None
             ),
+            insights=insights,
         )
 
         await _set_stage(session, analysis, AnalysisStatus.VALIDATING)
@@ -206,10 +208,19 @@ async def run_analysis(session: AsyncSession, analysis: Analysis, version: Datas
         shortfall_reason = recommendation_shortfall_reason(len(top))
 
         await _set_stage(session, analysis, AnalysisStatus.GENERATING_PREVIEWS)
+        top_responses = [
+            VisualizationRecommendationResponse(**r.__dict__).model_dump(mode="json") for r in top
+        ]
         analysis.recommendations = {
-            "top": [
-                VisualizationRecommendationResponse(**r.__dict__).model_dump(mode="json")
-                for r in top
+            "top": top_responses,
+            "groups": [
+                RecommendationCategoryGroup(
+                    category=category,
+                    recommendations=[
+                        VisualizationRecommendationResponse(**r.__dict__) for r in recs
+                    ],
+                ).model_dump(mode="json")
+                for category, recs in group_by_category(top)
             ],
             "shortfall_reason": shortfall_reason,
         }

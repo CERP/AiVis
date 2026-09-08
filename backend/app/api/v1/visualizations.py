@@ -15,6 +15,7 @@ from app.schemas.visualization import (
     ApplyCommandRequest,
     CreateVisualizationRequest,
     NLEditRequest,
+    SetFavoriteRequest,
     VisualizationResponse,
     VisualizationVersionResponse,
 )
@@ -60,6 +61,7 @@ async def _to_response(
         story_id=visualization.story_id,
         title=visualization.title,
         current_version_id=visualization.current_version_id,
+        is_favorite=visualization.is_favorite,
         created_at=visualization.created_at,
     )
 
@@ -123,6 +125,21 @@ async def apply_command_route(
         ) from exc
 
     return new_version
+
+
+@router.patch("/{visualization_id}/favorite", response_model=VisualizationResponse)
+async def set_favorite_route(
+    visualization_id: uuid.UUID,
+    payload: SetFavoriteRequest,
+    organization_id: uuid.UUID = Depends(get_current_organization_id),
+    session: AsyncSession = Depends(get_session),
+) -> VisualizationResponse:
+    visualization = await _get_owned_visualization(visualization_id, organization_id, session)
+    visualization.is_favorite = payload.is_favorite
+    session.add(visualization)
+    await session.commit()
+    await session.refresh(visualization)
+    return await _to_response(visualization, session)
 
 
 @router.post("/{visualization_id}/nl-edit", response_model=VisualizationVersionResponse)

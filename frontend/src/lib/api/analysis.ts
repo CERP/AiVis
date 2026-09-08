@@ -30,9 +30,35 @@ export interface DataQuality {
   issues: DataQualityIssue[];
 }
 
+export interface RecommendationCategoryGroup {
+  category: string;
+  recommendations: VisualizationRecommendation[];
+}
+
 export interface AnalysisRecommendations {
   top: VisualizationRecommendation[];
+  groups: RecommendationCategoryGroup[];
   shortfall_reason: string | null;
+}
+
+export const CATEGORY_LABELS: Record<string, string> = {
+  trend: "Trends",
+  comparison: "Comparisons",
+  distribution: "Distributions",
+  relationship: "Relationships",
+  ranking: "Rankings",
+  composition: "Composition",
+  hierarchy: "Hierarchy",
+  flow: "Flow",
+  anomaly: "Anomalies",
+  change: "Changes",
+  seasonality: "Seasonality",
+  derived_metric: "Derived metrics",
+  other: "Other",
+};
+
+export function categoryLabel(category: string): string {
+  return CATEGORY_LABELS[category] ?? category.charAt(0).toUpperCase() + category.slice(1);
 }
 
 export interface Analysis {
