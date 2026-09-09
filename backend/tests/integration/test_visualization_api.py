@@ -88,6 +88,65 @@ async def test_create_and_fetch_visualization(client: AsyncClient) -> None:
         assert get_resp.status_code == 200
 
 
+async def test_list_visualizations_returns_lightweight_summary(client: AsyncClient) -> None:
+    async with client as c:
+        token, project_id, version_id = await _setup(c)
+        headers = {"Authorization": f"Bearer {token}"}
+
+        create_resp = await c.post(
+            "/api/visualizations",
+            params={"project_id": project_id},
+            json={"title": "Revenue by region", "spec": _spec_payload(version_id)},
+            headers=headers,
+        )
+        viz_id = create_resp.json()["id"]
+
+        list_resp = await c.get(
+            "/api/visualizations", params={"project_id": project_id}, headers=headers
+        )
+        assert list_resp.status_code == 200, list_resp.text
+        summaries = list_resp.json()
+        assert len(summaries) == 1
+        summary = summaries[0]
+        assert summary["id"] == viz_id
+        assert summary["title"] == "Revenue by region"
+        assert summary["chart_type"] == "bar"
+        assert summary["dataset_name"]
+        assert "spec" not in summary
+
+
+async def test_list_visualizations_empty_for_project_with_none(client: AsyncClient) -> None:
+    async with client as c:
+        token, project_id, _version_id = await _setup(c)
+        headers = {"Authorization": f"Bearer {token}"}
+
+        list_resp = await c.get(
+            "/api/visualizations", params={"project_id": project_id}, headers=headers
+        )
+        assert list_resp.status_code == 200
+        assert list_resp.json() == []
+
+
+async def test_list_visualizations_requires_project_ownership(client: AsyncClient) -> None:
+    async with client as c:
+        _token, project_id, _version_id = await _setup(c)
+
+        other_signup = await c.post(
+            "/api/auth/signup",
+            json={
+                "email": "other-viz@example.com",
+                "password": "supersecret1",
+                "organization_name": "Other Co",
+            },
+        )
+        other_headers = {"Authorization": f"Bearer {other_signup.json()['access_token']}"}
+
+        resp = await c.get(
+            "/api/visualizations", params={"project_id": project_id}, headers=other_headers
+        )
+        assert resp.status_code == 404
+
+
 async def test_create_rejects_unknown_field(client: AsyncClient) -> None:
     async with client as c:
         token, project_id, version_id = await _setup(c)

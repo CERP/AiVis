@@ -25,6 +25,18 @@ class NLEditRequest(BaseModel):
     query: str = Field(min_length=1, max_length=500)
 
 
+class VisualizationSummaryResponse(BaseModel):
+    """Lightweight row for project-hub listings -- deliberately omits the full spec so listing
+    a project's visualizations never pulls every version's JSON blob over the wire."""
+
+    id: uuid.UUID
+    title: str
+    chart_type: str | None
+    dataset_id: uuid.UUID
+    dataset_name: str
+    updated_at: datetime
+
+
 class VisualizationResponse(BaseModel):
     id: uuid.UUID
     project_id: uuid.UUID

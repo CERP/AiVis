@@ -1,14 +1,8 @@
 import type { Metadata } from "next";
-import { IBM_Plex_Mono, IBM_Plex_Sans, Space_Grotesk } from "next/font/google";
+import { IBM_Plex_Mono, IBM_Plex_Sans } from "next/font/google";
 import "./globals.css";
 import { Providers } from "./providers";
 
-const spaceGrotesk = Space_Grotesk({
-  subsets: ["latin"],
-  weight: ["500", "600", "700"],
-  variable: "--font-space-grotesk",
-  display: "swap",
-});
 const ibmPlexSans = IBM_Plex_Sans({
   subsets: ["latin"],
   weight: ["400", "500", "600", "700"],
@@ -42,7 +36,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
     <html
       lang="en"
-      className={`h-full antialiased ${spaceGrotesk.variable} ${ibmPlexSans.variable} ${ibmPlexMono.variable}`}
+      className={`h-full antialiased ${ibmPlexSans.variable} ${ibmPlexMono.variable}`}
       suppressHydrationWarning
     >
       <head suppressHydrationWarning>

@@ -12,6 +12,15 @@ export interface Visualization {
   is_favorite: boolean;
 }
 
+export interface VisualizationSummary {
+  id: string;
+  title: string;
+  chart_type: string | null;
+  dataset_id: string;
+  dataset_name: string;
+  updated_at: string;
+}
+
 export interface VisualizationVersion {
   id: string;
   visualization_id: string;
@@ -34,6 +43,10 @@ export interface VisualizationCommand {
     | "change_sort"
     | "change_layout";
   params: Record<string, unknown>;
+}
+
+export function listVisualizations(projectId: string) {
+  return apiClient.get<VisualizationSummary[]>(`/api/visualizations?project_id=${projectId}`);
 }
 
 export function createVisualization(

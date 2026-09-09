@@ -107,7 +107,7 @@ export function StatTile({
       initial={{ opacity: 0, y: 8 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.3, delay: index * 0.05 }}
-      className="flex flex-col gap-1 rounded-[var(--radius-token)] border border-border bg-surface p-4 shadow-sm"
+      className="flex flex-col gap-1 rounded-[var(--radius-token)] border border-border bg-surface p-4"
     >
       <span className="text-xs text-muted-foreground">{label}</span>
       <span className="font-headline text-2xl font-bold">{value}</span>

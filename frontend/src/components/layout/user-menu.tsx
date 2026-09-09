@@ -62,7 +62,10 @@ export function UserMenu() {
       </button>
 
       {open && (
-        <div className="absolute right-0 top-full z-50 mt-2 w-56 rounded-[var(--radius-token)] border border-border bg-surface py-1.5 shadow-lg">
+        <div
+          className="absolute right-0 top-full z-50 mt-2 w-56 rounded-[var(--radius-token)] border border-border bg-surface py-1.5"
+          style={{ boxShadow: "var(--shadow-popover)" }}
+        >
           <div className="border-b border-border px-3.5 py-2.5">
             {user ? (
               <>

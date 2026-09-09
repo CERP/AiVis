@@ -25,18 +25,49 @@
   --info-bg: #e7f0fa;
   --secondary: #e2703a;
   --secondary-bg: #fdf0ea;
-  --focus-ring: #14151a;
+  /* Focus ring uses the semantic accent color, not ink, so focus is always the same signal as
+     "interactive/selected" elsewhere in the system (see design system Phase 5 SS4). */
+  --focus-ring: var(--accent);
 
-  --chart-1: #5946e5;
-  --chart-2: #0f9b8e;
-  --chart-3: #e2703a;
-  --chart-4: #2f87d6;
-  --chart-5: #b23a82;
-  --chart-6: #7c8797;
+  /* Categorical chart palette -- aligned with the colorblind-safe Paul Tol "vibrant" set used
+     server-side in backend/app/visualization/themes.py (no yellow, WCAG-checked against white).
+     Deliberately distinct from --accent so chart series color and interactive-UI color never
+     collide (see design system Phase 5 SS4/SS22). Values here are the frontend equivalents of
+     the same 6-hue family; the canonical WCAG contrast check lives with the backend palette. */
+  --chart-1: #0077bb;
+  --chart-2: #33bbee;
+  --chart-3: #009988;
+  --chart-4: #ee7733;
+  --chart-5: #cc3311;
+  --chart-6: #ee3377;
 
-  --radius: 0.75rem;
+  /* Radius scale: small (inputs/chips), medium (default -- cards, buttons, selectable objects),
+     large (modals only). --radius-token stays the default alias so existing consumers get the
+     medium value without each needing to pick a step explicitly. */
+  --radius-sm: 0.25rem;
+  --radius-md: 0.375rem;
+  --radius-lg: 0.625rem;
+  --radius: var(--radius-md);
 
-  --font-headline: var(--font-space-grotesk), -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  /* Two elevation levels only -- popovers/dropdowns and modals/bottom-sheets. Cards, rows, and
+     panels use borders, not shadows (see design system Phase 5 SS9). */
+  --shadow-popover: 0 4px 16px rgba(15, 15, 20, 0.12);
+  --shadow-modal: 0 12px 36px rgba(15, 15, 20, 0.18);
+
+  /* Motion tokens -- durations only communicate state change, never decorate. */
+  --duration-micro: 100ms;
+  --duration-panel: 180ms;
+  --duration-modal: 150ms;
+  --duration-chart: 200ms;
+  --ease-out: cubic-bezier(0, 0, 0.2, 1);
+  --ease-in-out: cubic-bezier(0.4, 0, 0.2, 1);
+
+  /* Headline font is IBM Plex Sans at controlled weight/size -- no separate display face.
+     Marketing and in-app screens currently share this one token (see design system Phase 5 SS2
+     and implementation Phase 6 SS3); introducing a distinct marketing-only display font would
+     require a second token plus per-page class changes, which is restyling scope, not a
+     foundation change. */
+  --font-headline: var(--font-ibm-plex-sans), -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
   --font-body: var(--font-ibm-plex-sans), -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
   --font-mono: var(--font-ibm-plex-mono), "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
 }
@@ -66,14 +97,16 @@
   --info-bg: #16283a;
   --secondary: #e2703a;
   --secondary-bg: #3a2418;
-  --focus-ring: #ece9f5;
+  --focus-ring: var(--accent);
 
-  --chart-1: #7a6bf0;
-  --chart-2: #4fd6b0;
-  --chart-3: #e2703a;
-  --chart-4: #5aa8e8;
-  --chart-5: #d465ab;
-  --chart-6: #9497a6;
+  /* Same Tol-derived hue family as light mode, lightened for legibility against a dark
+     background rather than inverted. */
+  --chart-1: #4fb3e8;
+  --chart-2: #5fd4f5;
+  --chart-3: #3ecbb8;
+  --chart-4: #f5a05f;
+  --chart-5: #ea6a4d;
+  --chart-6: #f56ba8;
 }
 
 .scroll-header-bar {
@@ -95,7 +128,7 @@
 
 .scroll-header a:focus-visible,
 .scroll-header button:focus-visible {
-  outline: 2px solid #b5a4ff;
+  outline: 2px solid var(--focus-ring);
   outline-offset: 3px;
 }
 
@@ -131,6 +164,15 @@
   --color-chart-5: var(--chart-5);
   --color-chart-6: var(--chart-6);
   --radius-token: var(--radius);
+  --radius-sm-token: var(--radius-sm);
+  --radius-md-token: var(--radius-md);
+  --radius-lg-token: var(--radius-lg);
+  --shadow-popover-token: var(--shadow-popover);
+  --shadow-modal-token: var(--shadow-modal);
+  --duration-micro-token: var(--duration-micro);
+  --duration-panel-token: var(--duration-panel);
+  --duration-modal-token: var(--duration-modal);
+  --duration-chart-token: var(--duration-chart);
   --font-headline: var(--font-headline);
   --font-body: var(--font-body);
   --font-mono: var(--font-mono);

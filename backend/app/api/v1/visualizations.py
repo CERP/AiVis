@@ -1,13 +1,15 @@
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, status
+from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.ai.base import AIProviderError
 from app.ai.factory import get_ai_provider
 from app.api.deps import get_current_organization_id
 from app.core.db import get_session
-from app.models.visualization import Visualization
+from app.models.dataset import Dataset, DatasetVersion
+from app.models.visualization import Visualization, VisualizationVersion
 from app.repositories.dataset import DatasetVersionRepository
 from app.repositories.project import ProjectRepository
 from app.repositories.visualization import VisualizationRepository, VisualizationVersionRepository
@@ -17,6 +19,7 @@ from app.schemas.visualization import (
     NLEditRequest,
     SetFavoriteRequest,
     VisualizationResponse,
+    VisualizationSummaryResponse,
     VisualizationVersionResponse,
 )
 from app.services.visualization import (
@@ -91,6 +94,63 @@ async def create_visualization_route(
         ) from exc
 
     return await _to_response(visualization, session)
+
+
+@router.get("", response_model=list[VisualizationSummaryResponse])
+async def list_visualizations_route(
+    project_id: uuid.UUID,
+    organization_id: uuid.UUID = Depends(get_current_organization_id),
+    session: AsyncSession = Depends(get_session),
+) -> list[VisualizationSummaryResponse]:
+    """Project-hub listing -- three batched queries regardless of visualization count, never one
+    query per row, since this powers a page that may list many visualizations at once."""
+    project = await ProjectRepository(session).get(project_id)
+    if project is None or project.organization_id != organization_id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Project not found")
+
+    visualizations = await VisualizationRepository(session).list_for_project(project_id)
+    if not visualizations:
+        return []
+
+    dataset_version_ids = {v.dataset_version_id for v in visualizations}
+    version_result = await session.exec(
+        select(DatasetVersion).where(DatasetVersion.id.in_(dataset_version_ids))
+    )
+    dataset_id_by_version_id = {v.id: v.dataset_id for v in version_result.all()}
+
+    dataset_ids = set(dataset_id_by_version_id.values())
+    dataset_result = await session.exec(select(Dataset).where(Dataset.id.in_(dataset_ids)))
+    dataset_name_by_id = {d.id: d.name for d in dataset_result.all()}
+
+    current_version_ids = {v.current_version_id for v in visualizations if v.current_version_id}
+    chart_type_by_version_id: dict[uuid.UUID, str | None] = {}
+    if current_version_ids:
+        chart_version_result = await session.exec(
+            select(VisualizationVersion).where(VisualizationVersion.id.in_(current_version_ids))
+        )
+        chart_type_by_version_id = {
+            v.id: v.spec.get("chart_type") for v in chart_version_result.all()
+        }
+
+    summaries: list[VisualizationSummaryResponse] = []
+    for visualization in visualizations:
+        dataset_id = dataset_id_by_version_id.get(visualization.dataset_version_id)
+        chart_type = (
+            chart_type_by_version_id.get(visualization.current_version_id)
+            if visualization.current_version_id
+            else None
+        )
+        summaries.append(
+            VisualizationSummaryResponse(
+                id=visualization.id,
+                title=visualization.title,
+                chart_type=chart_type,
+                dataset_id=dataset_id,
+                dataset_name=dataset_name_by_id.get(dataset_id, "Unknown dataset"),
+                updated_at=visualization.updated_at,
+            )
+        )
+    return summaries
 
 
 @router.get("/{visualization_id}", response_model=VisualizationResponse)

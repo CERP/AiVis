@@ -37,8 +37,11 @@ export function Drawer({
             initial={{ x: "100%" }}
             animate={{ x: 0 }}
             exit={{ x: "100%" }}
-            transition={{ type: "spring", stiffness: 320, damping: 34 }}
-            className="relative h-full w-full max-w-[520px] overflow-y-auto bg-surface p-8 shadow-[-16px_0_40px_rgba(0,0,0,0.15)]"
+            transition={{ duration: 0.18, ease: [0, 0, 0.2, 1] }}
+            className="relative h-full w-full max-w-[520px] overflow-y-auto bg-surface p-8"
+            // Same modal-elevation depth as --shadow-modal, offset leftward since the drawer is
+            // anchored to the right edge -- the token's shape assumes a centered/floating panel.
+            style={{ boxShadow: "-16px 0 40px rgba(15, 15, 20, 0.18)" }}
             onClick={(e) => e.stopPropagation()}
           >
             <button

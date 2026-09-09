@@ -141,7 +141,7 @@ def _column_issues(
     # `state` column with intentional casing inconsistency produced zero findings before this fix.
     if col.semantic_type in ("categorical", "geographic") and col.name in df.columns:
         non_null = df[col.name].drop_nulls()
-        if len(non_null) > 0:
+        if len(non_null) > 0 and non_null.dtype == pl.Utf8:
             normalized_unique = non_null.str.to_lowercase().str.strip_chars().n_unique()
             if normalized_unique < col.unique_count:
                 issues.append(
