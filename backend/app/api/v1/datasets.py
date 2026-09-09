@@ -32,6 +32,7 @@ from app.schemas.cleaning import (
 from app.schemas.dataset import DatasetResponse
 from app.schemas.insight import InsightResponse
 from app.schemas.profile import ColumnProfileResponse, DatasetProfileResponse
+from app.schemas.recommendation import FindingsWindowResponse
 from app.schemas.rows import DatasetRowsResponse
 from app.schemas.story import StoryResponse
 from app.schemas.visualization import VisualizationResponse
@@ -323,6 +324,45 @@ async def get_analysis(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No analysis found")
 
     return AnalysisResponse.from_analysis(analysis)
+
+
+@router.get("/{dataset_id}/analysis/findings", response_model=FindingsWindowResponse)
+async def get_analysis_findings(
+    dataset_id: uuid.UUID,
+    offset: int = 0,
+    limit: int = 8,
+    organization_id: uuid.UUID = Depends(get_current_organization_id),
+    session: AsyncSession = Depends(get_session),
+) -> FindingsWindowResponse:
+    """Slices the already-ranked, already-deduplicated `recommendations.top` list persisted on
+    Analysis -- pure pagination over precomputed data. Never re-ranks, never re-runs Gemini, and
+    never recomputes recommendations, regardless of which window is requested."""
+    if offset < 0 or limit < 1:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="offset must be >= 0 and limit must be >= 1",
+        )
+    dataset = await DatasetRepository(session).get(dataset_id)
+    if dataset is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Dataset not found")
+    await _require_project(dataset.project_id, organization_id, session)
+
+    analysis = await AnalysisRepository(session).get_latest_for_dataset(dataset_id)
+    if analysis is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No analysis found")
+
+    top = (analysis.recommendations or {}).get("top", [])
+    window = top[offset : offset + limit]
+    next_offset = offset + limit if offset + limit < len(top) else None
+
+    return FindingsWindowResponse(
+        items=window,
+        offset=offset,
+        limit=limit,
+        total=len(top),
+        next_offset=next_offset,
+        has_more=next_offset is not None,
+    )
 
 
 @router.post("/{dataset_id}/analysis/retry", response_model=AnalysisResponse)

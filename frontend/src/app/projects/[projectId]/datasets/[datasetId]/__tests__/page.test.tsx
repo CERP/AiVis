@@ -123,7 +123,7 @@ describe("DatasetOverviewPage", () => {
     expect(screen.getByText(/62 — Needs cleaning/)).toBeInTheDocument();
   });
 
-  it("routes the healthy-state CTA to the still-transitional /recommend flow (Analysis isn't built yet)", async () => {
+  it("routes the healthy-state CTA to the real nested Analysis route", async () => {
     projectGetMock.mockResolvedValue({ id: "p1", name: "Acme Q3 Sales" });
     getDatasetMock.mockResolvedValue({ id: "d1", project_id: "p1", original_filename: "sales_q3.csv" });
     getProfileMock.mockResolvedValue(baseProfile);
@@ -132,7 +132,7 @@ describe("DatasetOverviewPage", () => {
     renderPage();
     const button = await screen.findByRole("button", { name: /Continue to Analysis/ });
     button.click();
-    expect(routerPush).toHaveBeenCalledWith("/datasets/d1/recommend");
+    expect(routerPush).toHaveBeenCalledWith("/projects/p1/datasets/d1/analysis");
   });
 
   it("routes the messy-state CTA to the real nested Cleaning route", async () => {

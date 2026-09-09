@@ -73,11 +73,10 @@ export default function DatasetOverviewPage() {
     : undefined;
 
   const ctaLabel = hasQualityIssues ? "Review Cleaning" : "Continue to Analysis";
-  // Messy state now has a real destination (Batch 5). Analysis doesn't yet (Batch 6), so the
-  // healthy path still temporarily lands on the old /recommend flow.
+  // Both stages now have real nested routes (Batch 6 completed Analysis).
   const ctaHref = hasQualityIssues
     ? `/projects/${projectId}/datasets/${datasetId}/cleaning`
-    : `/datasets/${datasetId}/recommend`;
+    : `/projects/${projectId}/datasets/${datasetId}/analysis`;
 
   return (
     <AppShell>

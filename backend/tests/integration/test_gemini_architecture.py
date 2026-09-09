@@ -147,6 +147,171 @@ async def test_recommendation_count_stays_bounded_for_wide_dataset(
         assert len(recs) < 100, "old combinatorial-loop behavior would have produced 100+"
 
 
+async def test_findings_window_paginates_over_the_precomputed_ranked_list(
+    client: AsyncClient, session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Needs a candidate pool bigger than one window: a wide dataset produces many deterministic
+    # Story-derived candidates, which only survive when Gemini's chart plan is unavailable (a
+    # real ChartRecommendations response, even an empty one, suppresses the deterministic tier
+    # entirely -- see generate_recommendations()'s call site in analysis_orchestrator.py).
+    class FailingProvider(AIProvider):
+        async def generate_structured(self, *, system_instruction, prompt, response_schema):
+            raise AIProviderError("simulated invalid API key")
+
+    monkeypatch.setattr(
+        "app.services.analysis_orchestrator.get_ai_provider", lambda: FailingProvider()
+    )
+
+    async with client as c:
+        dataset, headers = await _signup_and_upload(
+            c, "findings-window@example.com", "wide.csv", _wide_csv()
+        )
+        analysis_repo = AnalysisRepository(session)
+        analysis = await analysis_repo.claim_next_queued()
+        version = await DatasetVersionRepository(session).get(analysis.dataset_version_id)
+        await run_analysis(session, analysis, version)
+
+        full = (await c.get(f"/api/datasets/{dataset['id']}/analysis", headers=headers)).json()
+        total = len(full["recommendations"]["top"])
+        assert total > 8, "test needs a dataset producing more than one window"
+
+        first = await c.get(
+            f"/api/datasets/{dataset['id']}/analysis/findings",
+            params={"offset": 0, "limit": 8},
+            headers=headers,
+        )
+        assert first.status_code == 200, first.text
+        first_body = first.json()
+        assert len(first_body["items"]) == 8
+        assert first_body["total"] == total
+        assert first_body["has_more"] is True
+        assert first_body["next_offset"] == 8
+        # Same order as the persisted, already-ranked list -- no re-ranking happened.
+        assert [item["story_id"] for item in first_body["items"]] == [
+            item["story_id"] for item in full["recommendations"]["top"][:8]
+        ]
+
+        second = await c.get(
+            f"/api/datasets/{dataset['id']}/analysis/findings",
+            params={"offset": first_body["next_offset"], "limit": 8},
+            headers=headers,
+        )
+        second_body = second.json()
+        assert len(second_body["items"]) > 0
+        first_ids = {item["story_id"] for item in first_body["items"]}
+        second_ids = {item["story_id"] for item in second_body["items"]}
+        assert first_ids.isdisjoint(second_ids), "no duplicate items across windows"
+
+
+async def test_findings_window_beyond_end_returns_empty_with_no_more(
+    client: AsyncClient, session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(
+        "app.services.analysis_orchestrator.get_ai_provider",
+        lambda: FakeChartRecProvider(),
+    )
+
+    async with client as c:
+        dataset, headers = await _signup_and_upload(
+            c, "findings-beyond@example.com", "wide.csv", _wide_csv()
+        )
+        analysis_repo = AnalysisRepository(session)
+        analysis = await analysis_repo.claim_next_queued()
+        version = await DatasetVersionRepository(session).get(analysis.dataset_version_id)
+        await run_analysis(session, analysis, version)
+
+        resp = await c.get(
+            f"/api/datasets/{dataset['id']}/analysis/findings",
+            params={"offset": 10_000, "limit": 8},
+            headers=headers,
+        )
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["items"] == []
+        assert body["has_more"] is False
+        assert body["next_offset"] is None
+
+
+async def test_findings_window_fewer_than_limit_reports_no_more(
+    client: AsyncClient, session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    class EmptyChartProvider(AIProvider):
+        """A *complete* catalog evaluation with nothing applicable -- not an incomplete/empty
+        one. An incomplete catalog fails _validate_catalog()'s completeness check, which (after
+        the one bounded repair retry also fails) makes chart_recommendations None and therefore
+        falls back to Story-derived deterministic candidates -- the opposite of what this test
+        needs to exercise a genuinely-empty recommendation list."""
+
+        async def generate_structured(self, *, system_instruction, prompt, response_schema):
+            if response_schema is ChartRecommendations:
+                return ChartRecommendations(
+                    evaluations=[
+                        {
+                            "chart_type": chart_type,
+                            "applicable": False,
+                            "reason": "Not supported by this fixture",
+                            "recommendation_rank": None,
+                        }
+                        for chart_type in sorted(IMPLEMENTED_CHART_TYPES)
+                    ],
+                    recommendations=[],
+                )
+            return AnalyticalFindings(findings=[])
+
+    monkeypatch.setattr(
+        "app.services.analysis_orchestrator.get_ai_provider", lambda: EmptyChartProvider()
+    )
+
+    async with client as c:
+        dataset, headers = await _signup_and_upload(
+            c, "findings-few@example.com", "clean.csv", (FIXTURES / "clean.csv").read_bytes()
+        )
+        analysis_repo = AnalysisRepository(session)
+        analysis = await analysis_repo.claim_next_queued()
+        version = await DatasetVersionRepository(session).get(analysis.dataset_version_id)
+        await run_analysis(session, analysis, version)
+
+        resp = await c.get(
+            f"/api/datasets/{dataset['id']}/analysis/findings",
+            params={"offset": 0, "limit": 8},
+            headers=headers,
+        )
+        assert resp.status_code == 200
+        body = resp.json()
+        assert len(body["items"]) <= 8
+        assert body["has_more"] is False
+        assert body["next_offset"] is None
+
+
+async def test_findings_window_rejects_invalid_pagination_params(
+    client: AsyncClient, session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(
+        "app.services.analysis_orchestrator.get_ai_provider",
+        lambda: FakeChartRecProvider(),
+    )
+
+    async with client as c:
+        dataset, headers = await _signup_and_upload(
+            c, "findings-invalid@example.com", "wide.csv", _wide_csv()
+        )
+        analysis_repo = AnalysisRepository(session)
+        analysis = await analysis_repo.claim_next_queued()
+        version = await DatasetVersionRepository(session).get(analysis.dataset_version_id)
+        await run_analysis(session, analysis, version)
+
+        assert (await c.get(
+            f"/api/datasets/{dataset['id']}/analysis/findings",
+            params={"offset": -1, "limit": 8},
+            headers=headers,
+        )).status_code == 422
+        assert (await c.get(
+            f"/api/datasets/{dataset['id']}/analysis/findings",
+            params={"offset": 0, "limit": 0},
+            headers=headers,
+        )).status_code == 422
+
+
 async def test_gemini_sdk_invoked_with_schema_constrained_request_and_reaches_output(
     client: AsyncClient, session: AsyncSession, monkeypatch: pytest.MonkeyPatch
 ) -> None:

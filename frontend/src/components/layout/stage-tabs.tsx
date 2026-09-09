@@ -9,9 +9,9 @@ export type DatasetStage = "overview" | "cleaning" | "analysis";
  * they never appear here; that distinction is what replaces PipelineStepper's 4-step model for
  * dataset-scoped pages.
  *
- * TRANSITIONAL (Batch 5): Cleaning now has its own real nested route. Analysis still doesn't --
- * that lands in Batch 6 -- so it continues pointing at the existing /recommend flow (which still
- * generates recommendations) until then. Swap this one remaining href once Analysis exists. */
+ * All three stages now have real nested routes (Batch 6 completed Analysis). The legacy
+ * /datasets/[id]/recommend route still exists as a redirect shell for old deep links only --
+ * nothing in the app's own navigation points at it anymore. */
 export function StageTabs({
   projectId,
   datasetId,
@@ -21,11 +21,10 @@ export function StageTabs({
   datasetId: string;
   current: DatasetStage;
 }) {
-  const recommendHref = `/datasets/${datasetId}/recommend`;
   const stages: { id: DatasetStage; label: string; href: string }[] = [
     { id: "overview", label: "Overview", href: `/projects/${projectId}/datasets/${datasetId}` },
     { id: "cleaning", label: "Cleaning", href: `/projects/${projectId}/datasets/${datasetId}/cleaning` },
-    { id: "analysis", label: "Analysis", href: recommendHref },
+    { id: "analysis", label: "Analysis", href: `/projects/${projectId}/datasets/${datasetId}/analysis` },
   ];
 
   return (

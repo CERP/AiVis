@@ -91,6 +91,23 @@ export function getAnalysis(datasetId: string) {
   return apiClient.get<Analysis>(`/api/datasets/${datasetId}/analysis`);
 }
 
+export interface FindingsWindow {
+  items: VisualizationRecommendation[];
+  offset: number;
+  limit: number;
+  total: number;
+  next_offset: number | null;
+  has_more: boolean;
+}
+
+/** Pure pagination over the already-ranked, already-deduplicated list the pipeline computed --
+ * never triggers re-ranking or a new Gemini call, regardless of which window is requested. */
+export function getAnalysisFindings(datasetId: string, offset = 0, limit = 8) {
+  return apiClient.get<FindingsWindow>(
+    `/api/datasets/${datasetId}/analysis/findings?offset=${offset}&limit=${limit}`
+  );
+}
+
 export function retryAnalysis(datasetId: string) {
   return apiClient.post<Analysis>(`/api/datasets/${datasetId}/analysis/retry`);
 }

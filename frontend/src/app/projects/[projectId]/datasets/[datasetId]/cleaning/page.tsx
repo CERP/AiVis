@@ -133,7 +133,7 @@ export default function CleaningReviewPage() {
         {appliedVersionId && (
           <div className="mb-6 flex flex-col gap-3 rounded-[var(--radius-token)] border border-border bg-surface p-4 sm:flex-row sm:items-center sm:justify-between">
             <p className="text-[13.5px] text-foreground">Cleaning applied to a new dataset version.</p>
-            <Button variant="accent" onClick={() => router.push(`/datasets/${datasetId}/recommend`)}>
+            <Button variant="accent" onClick={() => router.push(`/projects/${projectId}/datasets/${datasetId}/analysis`)}>
               Continue to Analysis <ArrowRight aria-hidden className="h-4 w-4" />
             </Button>
           </div>
@@ -146,7 +146,7 @@ export default function CleaningReviewPage() {
             </p>
             <Button
               variant="accent"
-              onClick={() => router.push(`/datasets/${datasetId}/recommend`)}
+              onClick={() => router.push(`/projects/${projectId}/datasets/${datasetId}/analysis`)}
             >
               Continue to Analysis <ArrowRight aria-hidden className="h-4 w-4" />
             </Button>
