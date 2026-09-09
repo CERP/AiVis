@@ -56,6 +56,17 @@ const theme: ThemeTokens = {
 };
 
 describe("compileToVegaLite", () => {
+  it("bins histogram values and counts observations instead of drawing one bar per row", () => {
+    const result = compileToVegaLite(baseSpec({
+      chart_type: "histogram",
+      encoding: { x: { field: "score", type: "quantitative" } },
+    }), [{ score: 65 }, { score: 65 }, { score: 80 }]) as unknown as CompiledSpec;
+    expect(result.mark.type).toBe("bar");
+    expect(result.encoding.x).toMatchObject({ field: "score", bin: { maxbins: 18 } });
+    expect(result.encoding.y).toMatchObject({ aggregate: "count", type: "quantitative" });
+    expect(result.encoding.y?.field).toBeUndefined();
+  });
+
   it("maps encoding channels and aggregation", () => {
     const result = compileToVegaLite(baseSpec(), [{ region: "North", revenue: 100 }]) as unknown as CompiledSpec;
     expect(result.encoding.x).toEqual({ field: "region", type: "nominal" });

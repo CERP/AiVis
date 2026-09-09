@@ -161,6 +161,7 @@ async def get_dataset(
 @router.get("/{dataset_id}/profile", response_model=DatasetProfileResponse)
 async def get_dataset_profile(
     dataset_id: uuid.UUID,
+    version_id: uuid.UUID | None = None,
     organization_id: uuid.UUID = Depends(get_current_organization_id),
     session: AsyncSession = Depends(get_session),
 ) -> DatasetProfileResponse:
@@ -175,8 +176,9 @@ async def get_dataset_profile(
             detail=f"Dataset is not ready (status={dataset.status})",
         )
 
-    version = await DatasetVersionRepository(session).get_latest(dataset_id)
-    if version is None:
+    version_repo = DatasetVersionRepository(session)
+    version = await version_repo.get(version_id) if version_id else await version_repo.get_latest(dataset_id)
+    if version is None or version.dataset_id != dataset_id:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No dataset version")
 
     columns = await DatasetColumnRepository(session).list_for_version(version.id)
@@ -346,6 +348,32 @@ async def retry_analysis(
 
     analysis = await analysis_repo.requeue_for_retry(analysis)
     return AnalysisResponse.from_analysis(analysis)
+
+
+@router.post("/{dataset_id}/analysis/refresh", response_model=AnalysisResponse, status_code=202)
+async def refresh_analysis(
+    dataset_id: uuid.UUID,
+    organization_id: uuid.UUID = Depends(get_current_organization_id),
+    session: AsyncSession = Depends(get_session),
+) -> AnalysisResponse:
+    dataset = await DatasetRepository(session).get(dataset_id)
+    if dataset is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Dataset not found")
+    await _require_project(dataset.project_id, organization_id, session)
+
+    repo = AnalysisRepository(session)
+    latest = await repo.get_latest_for_dataset(dataset_id)
+    if latest is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No analysis found")
+    if latest.status not in {AnalysisStatus.READY, AnalysisStatus.FAILED}:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Analysis is already running")
+
+    refreshed = await repo.create(Analysis(
+        dataset_id=dataset_id,
+        dataset_version_id=latest.dataset_version_id,
+        status=AnalysisStatus.QUEUED,
+    ))
+    return AnalysisResponse.from_analysis(refreshed)
 
 
 @router.get("/{dataset_id}/insights", response_model=list[InsightResponse])

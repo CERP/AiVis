@@ -1,4 +1,5 @@
 from pathlib import Path
+import uuid
 
 import pytest
 from httpx import ASGITransport, AsyncClient
@@ -6,6 +7,7 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.core.db import get_session
 from app.main import app
+from app.models.dataset import DatasetVersion
 from app.services.storage import get_storage_service
 
 pytestmark = pytest.mark.asyncio
@@ -79,3 +81,22 @@ async def test_profile_endpoint_404_for_failed_dataset(client: AsyncClient) -> N
 
         resp = await c.get(f"/api/datasets/{dataset['id']}/profile", headers=headers)
         assert resp.status_code == 409
+
+
+async def test_profile_pins_requested_version(client: AsyncClient, session: AsyncSession) -> None:
+    async with client as c:
+        dataset, headers = await _signup_and_upload(c, "clean.csv")
+        url = f"/api/datasets/{dataset['id']}/profile"
+        original = (await c.get(url, headers=headers)).json()
+        session.add(DatasetVersion(
+            dataset_id=uuid.UUID(dataset["id"]), version_number=1,
+            parquet_object_key="test-only-profile-version", row_count=3, column_count=0,
+        ))
+        await session.commit()
+        latest = await c.get(url, headers=headers)
+        assert latest.json()["row_count"] == 3
+        pinned = await c.get(url, params={"version_id": original["dataset_version_id"]}, headers=headers)
+        assert pinned.status_code == 200
+        assert pinned.json() == original
+        missing = await c.get(url, params={"version_id": str(uuid.uuid4())}, headers=headers)
+        assert missing.status_code == 404

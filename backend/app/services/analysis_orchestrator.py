@@ -160,7 +160,7 @@ async def run_analysis(session: AsyncSession, analysis: Analysis, version: Datas
         except AIProviderError as exc:
             # AI is advisory -- degrade gracefully to deterministic-only recommendations rather
             # than failing the whole analysis, per "deterministic services provide correctness."
-            analysis.ai_findings = {"error": str(exc)[:500], "findings": []}
+            analysis.ai_findings = {"error": str(exc)[:500], "chart_error": str(exc)[:500], "findings": []}
         else:
             # Both calls are read-only and depend only on `context` above -- run them
             # concurrently so total AI latency is one round-trip, not two.
@@ -180,6 +180,7 @@ async def run_analysis(session: AsyncSession, analysis: Analysis, version: Datas
 
             if isinstance(chart_recs_result, AIProviderError):
                 chart_recommendations = None
+                analysis.ai_findings = {**analysis.ai_findings, "chart_error": str(chart_recs_result)[:500]}
             elif isinstance(chart_recs_result, BaseException):
                 raise chart_recs_result
             else:
@@ -188,10 +189,16 @@ async def run_analysis(session: AsyncSession, analysis: Analysis, version: Datas
         await _set_stage(session, analysis, AnalysisStatus.GENERATING_RECOMMENDATIONS)
 
         recommendations = generate_recommendations(
-            stories,
+            # A valid Gemini plan owns chart selection. Do not append deterministic
+            # candidates that Gemini explicitly excluded from the applicable catalog.
+            stories if chart_recommendations is None else [],
             column_semantic_types,
             str(version.id),
-            ai_findings=findings.findings if findings else None,
+            # Findings remain visible analytical interpretation. Chart candidates come from
+            # the dedicated chart-plan response, whose channel mappings and catalog-wide
+            # eligibility are structurally validated. Turning prose findings directly into
+            # specs produced false derived metrics and mismatched chart types.
+            ai_findings=None,
             gemini_chart_recommendations=(
                 chart_recommendations.recommendations if chart_recommendations else None
             ),
@@ -211,8 +218,25 @@ async def run_analysis(session: AsyncSession, analysis: Analysis, version: Datas
         top_responses = [
             VisualizationRecommendationResponse(**r.__dict__).model_dump(mode="json") for r in top
         ]
+        evaluations = (
+            chart_recommendations.model_dump(mode="json").get("evaluations", [])
+            if chart_recommendations else []
+        )
+        accepted_ranks = {
+            int(rec.story_id.split(":", 1)[1])
+            for rec in top if rec.story_id.startswith("gemini-chart:")
+        }
+        for evaluation in evaluations:
+            if evaluation["applicable"] and evaluation["recommendation_rank"] not in accepted_ranks:
+                evaluation["applicable"] = False
+                evaluation["recommendation_rank"] = None
+                evaluation["reason"] = (
+                    "Gemini proposed this chart, but its mapping did not pass application "
+                    "validation or duplicated an accepted recommendation."
+                )
         analysis.recommendations = {
             "top": top_responses,
+            "evaluations": evaluations,
             "groups": [
                 RecommendationCategoryGroup(
                     category=category,

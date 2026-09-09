@@ -12,13 +12,14 @@ import uuid
 
 from app.ai.base import AIProvider, AIProviderError
 from app.ai.context_builder import AnalysisContext, DatasetSummary
-from app.ai.schemas import Aggregate, AnalysisCategory, ChartRecommendation, ChartRecommendations
+from app.ai.schemas import Aggregate, AnalysisCategory, ChartEligibility, ChartRecommendation, ChartRecommendations
 from app.models.insight import Story
 from app.services.chart_recommendations import (
     _SYSTEM_INSTRUCTION,
     analyze_chart_recommendations,
 )
 from app.visualization.recommendation import generate_recommendations, truncate_to_top
+from app.visualization.registry import IMPLEMENTED_CHART_TYPES
 
 _SEMANTIC_TYPES = {"revenue": "currency", "units": "numeric", "region": "categorical"}
 
@@ -53,6 +54,22 @@ def _rec(**overrides) -> ChartRecommendation:
     return ChartRecommendation(**defaults)
 
 
+def _complete_response(recommendations: list[ChartRecommendation]) -> ChartRecommendations:
+    by_type = {item.chart_type: item.rank for item in recommendations}
+    return ChartRecommendations(
+        recommendations=recommendations,
+        evaluations=[
+            ChartEligibility(
+                chart_type=chart_type,
+                applicable=chart_type in by_type,
+                reason="Supported" if chart_type in by_type else "Required roles unavailable",
+                recommendation_rank=by_type.get(chart_type),
+            )
+            for chart_type in sorted(IMPLEMENTED_CHART_TYPES)
+        ],
+    )
+
+
 class FakeProvider(AIProvider):
     def __init__(self, response: ChartRecommendations | None = None, fail: bool = False):
         self._response = response
@@ -82,7 +99,7 @@ def _context() -> AnalysisContext:
 
 @pytest.mark.asyncio
 async def test_analyze_chart_recommendations_returns_validated_schema() -> None:
-    expected = ChartRecommendations(recommendations=[_rec()])
+    expected = _complete_response([_rec()])
     provider = FakeProvider(response=expected)
 
     result = await analyze_chart_recommendations(provider, _context())
@@ -98,14 +115,102 @@ async def test_analyze_chart_recommendations_propagates_provider_error() -> None
         await analyze_chart_recommendations(provider, _context())
 
 
+@pytest.mark.asyncio
+async def test_analyze_chart_recommendations_rejects_partial_catalog_evaluation() -> None:
+    provider = FakeProvider(response=ChartRecommendations(recommendations=[_rec()]))
+    with pytest.raises(AIProviderError, match="complete chart catalog"):
+        await analyze_chart_recommendations(provider, _context())
+
+
+@pytest.mark.asyncio
+async def test_incomplete_catalog_repaired_once() -> None:
+    class RepairProvider(FakeProvider):
+        calls = 0
+
+        async def generate_structured(self, **kwargs):
+            self.calls += 1
+            if self.calls == 1:
+                return ChartRecommendations(recommendations=[_rec()])
+            assert "validation_error" in kwargs["prompt"]
+            return _complete_response([_rec()])
+
+    provider = RepairProvider()
+    result = await analyze_chart_recommendations(provider, _context())
+    assert len(result.evaluations) == len(IMPLEMENTED_CHART_TYPES)
+    assert provider.calls == 2
+
+
 def test_chart_recommendation_rejects_rank_out_of_range() -> None:
     with pytest.raises(ValidationError):
-        _rec(rank=31)
+        _rec(rank=43)
 
 
-def test_chart_recommendations_list_rejects_more_than_thirty() -> None:
+def test_chart_recommendations_list_rejects_more_than_chart_catalog() -> None:
     with pytest.raises(ValidationError):
-        ChartRecommendations(recommendations=[_rec(rank=1) for _ in range(31)])
+        ChartRecommendations(recommendations=[_rec(rank=1) for _ in range(43)])
+
+
+def test_gemini_histogram_rejects_identifier() -> None:
+    rec = _rec(chart_type="histogram", x_field="student_id", y_field=None, aggregate=None)
+    recs = generate_recommendations(
+        [], {**_SEMANTIC_TYPES, "student_id": "identifier"}, "v1",
+        gemini_chart_recommendations=[rec],
+    )
+    assert recs == []
+
+
+def test_gemini_can_map_extended_chart_channels() -> None:
+    rec = _rec(
+        chart_type="bubble", x_field="units", y_field="revenue", size_field="revenue",
+        aggregate=None,
+    )
+    recs = generate_recommendations(
+        [], _SEMANTIC_TYPES, "v1", gemini_chart_recommendations=[rec]
+    )
+    assert len(recs) == 1
+    assert recs[0].spec.encoding.size.field == "revenue"
+
+
+def test_gemini_preserves_chart_alternatives_and_aggregations() -> None:
+    candidates = [
+        _rec(),
+        _rec(rank=2, chart_type="horizontal_bar"),
+        _rec(rank=3, aggregate=Aggregate.MEAN),
+        _rec(rank=4),  # Identical mapping, not a new analytical result.
+    ]
+    recs = generate_recommendations(
+        [], _SEMANTIC_TYPES, "v1", gemini_chart_recommendations=candidates,
+    )
+    assert len(recs) == 3
+
+
+def test_gemini_priority_is_not_replaced_by_confidence() -> None:
+    recs = generate_recommendations(
+        [], _SEMANTIC_TYPES, "v1", gemini_chart_recommendations=[
+            _rec(rank=2, aggregate=Aggregate.MEAN, confidence=0.99),
+            _rec(rank=1, confidence=0.6),
+        ],
+    )
+    assert [rec.story_id for rec in recs] == ["gemini-chart:1", "gemini-chart:2"]
+
+
+@pytest.mark.asyncio
+async def test_duplicate_recommendation_ranks_rejected() -> None:
+    provider = FakeProvider(response=_complete_response([
+        _rec(), _rec(chart_type="horizontal_bar"),
+    ]))
+    with pytest.raises(AIProviderError, match="duplicate recommendation ranks"):
+        await analyze_chart_recommendations(provider, _context())
+
+
+@pytest.mark.asyncio
+async def test_recommendation_cannot_contradict_eligibility() -> None:
+    response = _complete_response([_rec()])
+    evaluation = next(item for item in response.evaluations if item.chart_type == "bar")
+    evaluation.applicable = False
+    evaluation.recommendation_rank = None
+    with pytest.raises(AIProviderError, match="marked inapplicable"):
+        await analyze_chart_recommendations(FakeProvider(response=response), _context())
 
 
 def test_gemini_chart_rec_with_hallucinated_field_is_discarded() -> None:

@@ -19,6 +19,7 @@ export interface DatasetProfile {
   columns: ColumnProfile[];
 }
 
-export function getProfile(datasetId: string) {
-  return apiClient.get<DatasetProfile>(`/api/datasets/${datasetId}/profile`);
+export function getProfile(datasetId: string, versionId?: string) {
+  const query = versionId ? `?version_id=${encodeURIComponent(versionId)}` : "";
+  return apiClient.get<DatasetProfile>(`/api/datasets/${datasetId}/profile${query}`);
 }

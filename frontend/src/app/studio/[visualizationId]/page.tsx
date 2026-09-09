@@ -101,14 +101,18 @@ export default function StudioPage() {
   });
 
   const rowsQuery = useQuery({
-    queryKey: ["rows", visualizationQuery.data?.dataset_id],
-    queryFn: () => getDatasetRows(visualizationQuery.data!.dataset_id),
+    queryKey: ["rows", visualizationQuery.data?.dataset_id, visualizationQuery.data?.dataset_version_id],
+    queryFn: () => getDatasetRows(
+      visualizationQuery.data!.dataset_id,
+      500,
+      visualizationQuery.data!.dataset_version_id
+    ),
     enabled: !!visualizationQuery.data,
   });
 
   const profileQuery = useQuery({
-    queryKey: ["profile", visualizationQuery.data?.dataset_id],
-    queryFn: () => getProfile(visualizationQuery.data!.dataset_id),
+    queryKey: ["profile", visualizationQuery.data?.dataset_id, visualizationQuery.data?.dataset_version_id],
+    queryFn: () => getProfile(visualizationQuery.data!.dataset_id, visualizationQuery.data!.dataset_version_id),
     enabled: !!visualizationQuery.data,
   });
 
@@ -243,7 +247,7 @@ export default function StudioPage() {
         <div className="grid grid-cols-1 gap-8 lg:grid-cols-[1fr_340px]">
           <div className="overflow-hidden rounded-[var(--radius-token)] border border-border bg-surface shadow-md">
             <div className="flex items-center justify-between border-b border-border bg-surface-muted px-4 py-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
-              Preview
+              Preview · up to 500 rows from selected version
             </div>
             <div className="p-6">
             {(!currentVersion || rowsQuery.isLoading) && (

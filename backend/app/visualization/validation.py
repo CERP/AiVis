@@ -68,6 +68,7 @@ _CHANNEL_GROUPS: tuple[tuple[str, ...], ...] = (("open", "high", "low", "close")
 # categorical field on either channel isn't "a scatter with a weird axis," it's a bar chart
 # mislabeled as a scatter. Enforced beyond the generic per-channel semantic-type check above.
 _REQUIRES_QUANTITATIVE_X_AND_Y: frozenset[str] = frozenset({"scatter", "bubble"})
+_REQUIRES_QUANTITATIVE_X: frozenset[str] = frozenset({"histogram"})
 
 _SEMANTIC_TO_COMPATIBLE_ENCODINGS: dict[str, set[EncodingType]] = {
     "numeric": {EncodingType.QUANTITATIVE, EncodingType.ORDINAL},
@@ -115,6 +116,10 @@ def validate_spec(
     for channel in REQUIRED_ENCODINGS.get(spec.chart_type, ()):
         if encoding_by_channel.get(channel) is None:
             errors.append(f"Chart type '{spec.chart_type}' requires a '{channel}' encoding")
+
+    if spec.chart_type in _REQUIRES_QUANTITATIVE_X:
+        if spec.encoding.x is None or spec.encoding.x.type != EncodingType.QUANTITATIVE:
+            errors.append(f"Chart type '{spec.chart_type}' requires a quantitative x encoding")
 
     for group in _CHANNEL_GROUPS:
         present = [c for c in group if encoding_by_channel.get(c) is not None]

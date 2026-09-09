@@ -27,6 +27,10 @@ class AnalysisStatus(StrEnum):
     FAILED = "failed"
 
 
+CURRENT_PIPELINE_VERSION = 2
+CURRENT_PROMPT_VERSION = 2
+
+
 # Ordered stage sequence, terminal states excluded -- used to compute a real progress percentage
 # (index in this list / len) rather than a fabricated number.
 STAGE_ORDER: list[AnalysisStatus] = [
@@ -59,8 +63,8 @@ class Analysis(TimestampedModel, table=True):
     # Bumped when the pipeline logic or the Gemini prompt changes in a way that should
     # invalidate previously-cached results -- not used to gate behavior yet, just recorded per
     # the spec's idempotency/observability requirement.
-    pipeline_version: int = Field(default=1)
-    prompt_version: int = Field(default=1)
+    pipeline_version: int = Field(default=CURRENT_PIPELINE_VERSION)
+    prompt_version: int = Field(default=CURRENT_PROMPT_VERSION)
 
     data_quality: dict = Field(default_factory=dict, sa_column=Column(JSON))
     ai_findings: dict = Field(default_factory=dict, sa_column=Column(JSON))

@@ -70,7 +70,7 @@ class ChartRecommendation(BaseModel):
     VisualizationSpec (app/visualization/recommendation.py) -- a hallucinated column name is
     discarded, never fabricated into the response."""
 
-    rank: int = Field(ge=1, le=30)
+    rank: int = Field(ge=1, le=42)
     category: AnalysisCategory
     chart_type: str = Field(max_length=50)
     title: str = Field(max_length=200)
@@ -79,12 +79,29 @@ class ChartRecommendation(BaseModel):
     x_field: str | None = None
     y_field: str | None = None
     color_field: str | None = None
+    size_field: str | None = None
+    detail_field: str | None = None
+    x2_field: str | None = None
+    y2_field: str | None = None
+    measure2_field: str | None = None
+    open_field: str | None = None
+    high_field: str | None = None
+    low_field: str | None = None
+    close_field: str | None = None
     aggregate: Aggregate | None = None
     confidence: float = Field(ge=0.0, le=1.0)
 
 
 class ChartRecommendations(BaseModel):
-    recommendations: list[ChartRecommendation] = Field(max_length=30)
+    recommendations: list[ChartRecommendation] = Field(max_length=42)
+    evaluations: list["ChartEligibility"] = Field(default_factory=list, max_length=42)
+
+
+class ChartEligibility(BaseModel):
+    chart_type: str = Field(max_length=50)
+    applicable: bool
+    reason: str = Field(max_length=300)
+    recommendation_rank: int | None = Field(default=None, ge=1, le=42)
 
 
 class StudioEditCommandType(StrEnum):

@@ -25,6 +25,7 @@ from app.repositories.analysis import AnalysisRepository
 from app.repositories.dataset import DatasetVersionRepository
 from app.services.analysis_orchestrator import run_analysis
 from app.services.storage import get_storage_service
+from app.visualization.registry import IMPLEMENTED_CHART_TYPES
 
 pytestmark = pytest.mark.asyncio
 
@@ -89,6 +90,15 @@ class FakeChartRecProvider(AIProvider):
         self.calls.append((system_instruction, response_schema))
         if response_schema is ChartRecommendations:
             return ChartRecommendations(
+                evaluations=[
+                    {
+                        "chart_type": chart_type,
+                        "applicable": chart_type == "bump",
+                        "reason": "Temporal ranking" if chart_type == "bump" else "Not supported by this fixture",
+                        "recommendation_rank": 1 if chart_type == "bump" else None,
+                    }
+                    for chart_type in sorted(IMPLEMENTED_CHART_TYPES)
+                ],
                 recommendations=[
                     # bump requires x+y+color together -- no deterministic detector in this
                     # pipeline produces a 3-field temporal+categorical-color combo, so this is
@@ -166,6 +176,7 @@ async def test_gemini_sdk_invoked_with_schema_constrained_request_and_reaches_ou
 
     gemini_recs = [r for r in recs if r["spec"]["metadata"]["generated_by"] == "gemini"]
     assert gemini_recs, "no Gemini-sourced recommendation reached the final response"
+    assert len(gemini_recs) == len(recs), "deterministic charts overrode Gemini's applicable catalog"
     assert gemini_recs[0]["spec"]["metadata"]["reasoning"] == (
         "temporal trend of a continuous measure, split by product"
     )

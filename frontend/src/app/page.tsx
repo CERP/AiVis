@@ -10,15 +10,15 @@ import { MarketingHeader } from "@/components/layout/marketing-header";
 import { useAuthStore } from "@/store/auth-store";
 
 const STATS = [
-  { value: "8", label: "curated charts, not 80" },
-  { value: "3.1s", label: "median time to first insight" },
-  { value: "120+", label: "column types recognized" },
+  { value: "Gemini", label: "guided recommendations" },
+  { value: "Your choice", label: "original or cleaned data" },
+  { value: "Validated", label: "chart-to-column mappings" },
 ];
 
 const PIPELINE_STEPS = [
   { n: "01", title: "Upload", description: "Drop a CSV, TSV, JSON, or Excel file. No schema required." },
   { n: "02", title: "Profile & clean", description: "Every column typed, quality issues surfaced with one-click fixes." },
-  { n: "03", title: "Recommend", description: "8 ranked visualizations, each with the analytical reasoning behind it." },
+  { n: "03", title: "Recommend", description: "Explore applicable visualizations, with column mappings and reasons for each choice." },
   { n: "04", title: "Studio", description: "Map fields, brand it, filter, annotate, export.", inverted: true },
 ];
 

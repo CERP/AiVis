@@ -13,6 +13,7 @@ from app.ai.base import AIProvider, AIProviderError
 from app.ai.schemas import AnalyticalFindings, ChartRecommendations
 from app.core.db import get_session
 from app.main import app
+from app.models.analysis import AnalysisStatus
 from app.repositories.analysis import AnalysisRepository
 from app.repositories.dataset import DatasetVersionRepository
 from app.services.analysis_orchestrator import run_analysis
@@ -82,6 +83,27 @@ async def test_upload_automatically_creates_queued_analysis(client: AsyncClient)
         assert body["status"] == "queued"
         assert body["progress"] == 0
         assert body["recommendations"] is None
+
+
+async def test_refresh_preserves_selected_version_and_rejects_running_analysis(
+    client: AsyncClient, session: AsyncSession,
+) -> None:
+    async with client as c:
+        dataset, headers = await _signup_and_upload(c, "refresh@example.com", "clean.csv")
+        url = f"/api/datasets/{dataset['id']}/analysis/refresh"
+        assert (await c.post(url, headers=headers)).status_code == 409
+        repo = AnalysisRepository(session)
+        analysis = await repo.claim_next_queued()
+        selected_id = analysis.dataset_version_id
+        analysis.status = AnalysisStatus.READY
+        session.add(analysis)
+        await session.commit()
+        refreshed = await c.post(url, headers=headers)
+        assert refreshed.status_code == 202, refreshed.text
+        assert refreshed.json()["dataset_version_id"] == str(selected_id)
+        assert refreshed.json()["id"] != str(analysis.id)
+        assert refreshed.json()["status"] == "queued"
+        assert (await c.post(url, headers=headers)).status_code == 409
 
 
 async def test_full_pipeline_produces_validated_recommendations(

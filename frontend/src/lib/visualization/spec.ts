@@ -86,6 +86,8 @@ export interface VisualizationMetadata {
   dataset_id: string;
   dataset_version_id: string;
   story_id?: string | null;
+  generated_by?: string;
+  reasoning?: string | null;
 }
 
 export interface VisualizationSpec {

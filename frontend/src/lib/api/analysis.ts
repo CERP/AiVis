@@ -39,6 +39,12 @@ export interface AnalysisRecommendations {
   top: VisualizationRecommendation[];
   groups: RecommendationCategoryGroup[];
   shortfall_reason: string | null;
+  evaluations?: Array<{
+    chart_type: string;
+    applicable: boolean;
+    reason: string;
+    recommendation_rank: number | null;
+  }>;
 }
 
 export const CATEGORY_LABELS: Record<string, string> = {
@@ -87,6 +93,10 @@ export function getAnalysis(datasetId: string) {
 
 export function retryAnalysis(datasetId: string) {
   return apiClient.post<Analysis>(`/api/datasets/${datasetId}/analysis/retry`);
+}
+
+export function refreshAnalysis(datasetId: string) {
+  return apiClient.post<Analysis>(`/api/datasets/${datasetId}/analysis/refresh`);
 }
 
 export const ANALYSIS_STAGE_LABELS: Record<string, string> = {

@@ -114,6 +114,9 @@ def _build_spec(
     if not fields:
         return None
 
+    if chart_type in _SINGLE_FIELD_CHART_TYPES and len(fields) != 1:
+        return None
+
     field_types = [(f, column_semantic_types.get(f)) for f in fields]
     if any(t is None for _, t in field_types):
         return None
@@ -214,33 +217,47 @@ def _build_spec_from_gemini(
     each field to its channel. Every field is re-checked against the real schema and every
     channel's semantic type is re-derived here (never trusted from the model), exactly like the
     deterministic Story path."""
-    fields = [f for f in (rec.x_field, rec.y_field, rec.color_field) if f is not None]
-    if not fields or any(f not in column_semantic_types for f in fields):
+    channel_fields = {
+        "x": rec.x_field,
+        "y": rec.y_field,
+        "color": rec.color_field,
+        "size": rec.size_field,
+        "detail": rec.detail_field,
+        "x2": rec.x2_field,
+        "y2": rec.y2_field,
+        "measure2": rec.measure2_field,
+        "open": rec.open_field,
+        "high": rec.high_field,
+        "low": rec.low_field,
+        "close": rec.close_field,
+    }
+    fields = [field for field in channel_fields.values() if field is not None]
+    if (not fields and rec.chart_type != "table") or any(f not in column_semantic_types for f in fields):
         return None  # references a field that doesn't exist -- discard, never fabricate
 
     encoding = Encodings()
     aggregation = Aggregation(rec.aggregate.value) if rec.aggregate else Aggregation.NONE
 
-    if rec.x_field is not None:
-        enc_type = _encoding_type_for(column_semantic_types.get(rec.x_field))
+    for channel, field_name in channel_fields.items():
+        if field_name is None:
+            continue
+        enc_type = _encoding_type_for(column_semantic_types.get(field_name))
         if enc_type is None:
             return None
-        encoding.x = Encoding(field=rec.x_field, type=enc_type)
-
-    if rec.y_field is not None:
-        enc_type = _encoding_type_for(column_semantic_types.get(rec.y_field))
-        if enc_type is None:
-            return None
-        is_measure = enc_type == EncodingType.QUANTITATIVE
-        encoding.y = Encoding(
-            field=rec.y_field, type=enc_type, aggregation=aggregation if is_measure else Aggregation.NONE
+        should_aggregate = channel in {"y", "size", "measure2"}
+        setattr(
+            encoding,
+            channel,
+            Encoding(
+                field=field_name,
+                type=enc_type,
+                aggregation=(
+                    aggregation
+                    if should_aggregate and enc_type == EncodingType.QUANTITATIVE
+                    else Aggregation.NONE
+                ),
+            ),
         )
-
-    if rec.color_field is not None:
-        enc_type = _encoding_type_for(column_semantic_types.get(rec.color_field))
-        if enc_type is None:
-            return None
-        encoding.color = Encoding(field=rec.color_field, type=enc_type)
 
     # Part-to-whole charts encode via color+size, not x/y -- the prompt asks Gemini for the
     # category on color_field and the measure on y_field, but it sometimes puts the category on
@@ -254,7 +271,7 @@ def _build_spec_from_gemini(
             encoding.color = encoding.x
             encoding.x = None
 
-    if encoding.x is None and encoding.y is None and encoding.color is None:
+    if not any(getattr(encoding, channel) is not None for channel in channel_fields) and rec.chart_type != "table":
         return None
 
     return VisualizationSpec(
@@ -317,10 +334,11 @@ def generate_recommendations(
     ordering feeds into."""
     insight_category = {str(insight.id): insight.type.value for insight in insights or []}
     seen_keys: set[tuple] = set()
+    seen_ai_specs: set[str] = set()
     ai_tier: list[VisualizationRecommendation] = []
     deterministic_tier: list[VisualizationRecommendation] = []
 
-    for rec in gemini_chart_recommendations or []:
+    for rec in sorted(gemini_chart_recommendations or [], key=lambda candidate: candidate.rank):
         spec = _build_spec_from_gemini(
             rec,
             column_semantic_types=column_semantic_types,
@@ -334,10 +352,13 @@ def generate_recommendations(
         if not result.is_valid:
             continue
 
-        key = _redundancy_key(spec)
-        if key in seen_keys:
+        # Preserve Gemini's useful alternative chart types and different aggregations.
+        # Only an identical type/channel mapping is a duplicate AI recommendation.
+        key = spec.chart_type + ":" + spec.encoding.model_dump_json()
+        if key in seen_ai_specs:
             continue
-        seen_keys.add(key)
+        seen_ai_specs.add(key)
+        seen_keys.add(_redundancy_key(spec))
 
         ai_tier.append(
             VisualizationRecommendation(
@@ -418,7 +439,8 @@ def generate_recommendations(
             )
         )
 
-    ai_tier.sort(key=lambda r: r.confidence, reverse=True)
+    # Gemini's explicit priority is not a statistical confidence estimate.
+    # Preserve its rank instead of promoting high-confidence but low-value charts.
     deterministic_tier.sort(key=lambda r: r.confidence, reverse=True)
     return ai_tier + deterministic_tier
 

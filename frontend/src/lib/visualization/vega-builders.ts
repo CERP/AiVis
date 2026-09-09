@@ -43,6 +43,23 @@ export interface BuiltSpec {
 const DEFAULT_UP = "#2f6b4f";
 const DEFAULT_DOWN = "#b5432a";
 
+/** Histogram: bin a continuous measure, then count observations in each bin. */
+function buildHistogram(ctx: BuilderContext): BuiltSpec {
+  const measure = ctx.compiled.x;
+  if (!measure) return {};
+  return {
+    mark: { type: "bar", color: ctx.markColor ?? "#4c78a8", tooltip: true },
+    encoding: {
+      x: { ...measure, bin: { maxbins: 18 }, title: measure.title ?? measure.field },
+      y: { aggregate: "count", type: "quantitative", title: "Observations" },
+      tooltip: [
+        { ...measure, bin: { maxbins: 18 }, title: measure.title ?? measure.field },
+        { aggregate: "count", type: "quantitative", title: "Observations" },
+      ],
+    },
+  };
+}
+
 /** Lollipop: a stem from the zero baseline to the value, plus an endpoint marker. Geometrically
  * a bar chart with the bar's area replaced by a 1px rule -- same encoding, same scale, so the
  * value position is identical to the equivalent bar. */
@@ -335,6 +352,7 @@ function buildLineColumn(ctx: BuilderContext): BuiltSpec {
 }
 
 export const VEGA_BUILDERS: Record<string, (ctx: BuilderContext) => BuiltSpec> = {
+  histogram: buildHistogram,
   lollipop: buildLollipop,
   bullet: buildBullet,
   bump: buildBump,

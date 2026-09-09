@@ -14,7 +14,7 @@ import { RecommendationCard } from "@/components/recommendations/recommendation-
 import { ThemeCard } from "@/components/recommendations/theme-card";
 import { VisualizationRenderer } from "@/components/visualization/visualization-renderer";
 import { DatasetDiffGrid } from "@/components/datasets/dataset-diff-grid";
-import { ANALYSIS_STAGE_LABELS, categoryLabel, getAnalysis } from "@/lib/api/analysis";
+import { ANALYSIS_STAGE_LABELS, categoryLabel, getAnalysis, refreshAnalysis } from "@/lib/api/analysis";
 import {
   getDataset,
   getDatasetFavorites,
@@ -37,6 +37,7 @@ export default function RecommendPage() {
   const [tab, setTab] = useState<"curated" | "theme">("curated");
   const [previewRec, setPreviewRec] = useState<VisualizationRecommendation | null>(null);
   const [workflowChosen, setWorkflowChosen] = useState(false);
+  const [expandedCategories, setExpandedCategories] = useState<Set<string>>(new Set());
   const [favoritedStoryIds, setFavoritedStoryIds] = useState<Set<string>>(new Set());
 
   const datasetQuery = useQuery({
@@ -52,12 +53,16 @@ export default function RecommendPage() {
   });
 
   const analysis = analysisQuery.data;
+  const refreshMutation = useMutation({
+    mutationFn: () => refreshAnalysis(datasetId),
+    onSuccess: (result) => queryClient.setQueryData(["analysis", datasetId], result),
+  });
   const isReady = analysis?.status === "ready";
   const isFailed = analysis?.status === "failed";
   const isProcessing = !!analysis && !isReady && !isFailed;
 
   const rowsQuery = useQuery({
-    queryKey: ["dataset-rows-preview", datasetId],
+    queryKey: ["dataset-rows-preview", datasetId, analysis?.dataset_version_id],
     queryFn: () => getDatasetRows(datasetId, 100, analysis?.dataset_version_id),
     enabled: isReady,
   });
@@ -152,6 +157,8 @@ export default function RecommendPage() {
   const recommendations = analysis?.recommendations?.top ?? [];
   const recommendationGroups = analysis?.recommendations?.groups ?? [];
   const themes = themesQuery.data ? [...themesQuery.data.top, ...themesQuery.data.rest] : [];
+  const chartEvaluations = analysis?.recommendations?.evaluations ?? [];
+  const applicableChartCount = chartEvaluations.filter((item) => item.applicable).length;
 
   const showWorkflowDiff =
     workflowQuery.data &&
@@ -196,13 +203,19 @@ export default function RecommendPage() {
               <>
                 {isReady && (
                   <>
-                    <h2 className="mb-1.5 font-headline text-[26px] font-bold">
+                    <div className="mb-4 flex flex-col items-start justify-between gap-3 sm:flex-row sm:items-center">
+                    <h2 className="font-headline text-[26px] font-bold">
                       {recommendations.length} way{recommendations.length === 1 ? "" : "s"} to see your data
                     </h2>
+                    <Button variant="outline" disabled={refreshMutation.isPending} onClick={() => refreshMutation.mutate()}>{refreshMutation.isPending ? "Starting…" : "Re-analyze with Gemini"}</Button>
+                    </div>
+                    {refreshMutation.isError && <p role="alert" className="mb-4 text-sm text-negative">Couldn&apos;t start analysis. Please try again.</p>}
+                    {typeof analysis?.ai_findings?.chart_error === "string" && <p role="alert" className="mb-4 rounded-lg border border-warning/30 p-3 text-sm text-muted-foreground">Gemini chart evaluation was unavailable. Displaying computed suggestions; re-analyze to retry.</p>}
                     <p className="mb-6 max-w-[640px] text-[14.5px] text-muted-foreground">
-                      Ranked by analytical relevance — the strength of the pattern behind each chart — not
-                      by how many chart types are technically possible.
+                      Explore applicable charts ranked by analytical relevance. Each includes its column
+                      mappings and explanation; expand chart coverage to inspect exclusions.
                     </p>
+                    {rowsQuery.data && <p className="mb-4 text-xs text-muted-foreground">Chart previews use up to 100 rows from the selected dataset version. Preview totals and distributions may differ from full-dataset statistics.</p>}
 
                     <Tabs
                       layoutId="recommend-tab"
@@ -257,6 +270,26 @@ export default function RecommendPage() {
                             {analysis.recommendations.shortfall_reason}
                           </p>
                         )}
+                        {chartEvaluations.length > 0 && (
+                          <details className="mb-6 rounded-xl border border-border bg-surface px-4 py-3">
+                            <summary className="cursor-pointer text-sm font-semibold">
+                              Chart coverage · {applicableChartCount} applicable of {chartEvaluations.length} evaluated
+                            </summary>
+                            <div className="mt-4 grid gap-2 sm:grid-cols-2">
+                              {chartEvaluations.map((item) => (
+                                <div key={item.chart_type} className="rounded-lg bg-surface-muted p-3">
+                                  <div className="flex items-center justify-between gap-3">
+                                    <span className="text-sm font-medium">{getChartDefinition(item.chart_type)?.label ?? item.chart_type}</span>
+                                    <span className={item.applicable ? "text-xs text-positive" : "text-xs text-muted-foreground"}>
+                                      {item.applicable ? "Applicable" : "Not applicable"}
+                                    </span>
+                                  </div>
+                                  <p className="mt-1 text-xs leading-relaxed text-muted-foreground">{item.reason}</p>
+                                </div>
+                              ))}
+                            </div>
+                          </details>
+                        )}
                         {recommendations.length === 0 ? (
                           <EmptyState
                             title="No recommendations yet"
@@ -280,8 +313,8 @@ export default function RecommendPage() {
                                     {group.recommendations.length}
                                   </span>
                                 </h3>
-                                <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">
-                                  {group.recommendations.map((rec, index) => (
+                                <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
+                                  {(expandedCategories.has(group.category) ? group.recommendations : group.recommendations.slice(0, 4)).map((rec, index) => (
                                     <div key={rec.story_id} className="flex flex-col gap-2.5">
                                       <RecommendationCard
                                         recommendation={rec}
@@ -313,6 +346,19 @@ export default function RecommendPage() {
                                     </div>
                                   ))}
                                 </div>
+                                {group.recommendations.length > 4 && (
+                                  <Button
+                                    variant="ghost"
+                                    className="mt-3"
+                                    onClick={() => setExpandedCategories((current) => {
+                                      const next = new Set(current);
+                                      if (next.has(group.category)) next.delete(group.category); else next.add(group.category);
+                                      return next;
+                                    })}
+                                  >
+                                    {expandedCategories.has(group.category) ? "Show fewer" : `Show all ${group.recommendations.length}`}
+                                  </Button>
+                                )}
                               </div>
                             ))}
                           </>

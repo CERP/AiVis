@@ -1,6 +1,8 @@
 import uuid
 
-from app.ai.context_builder import build_dataset_summary
+from app.ai.context_builder import build_analysis_context, build_dataset_summary
+from app.insights.data_quality import DataQualityReport
+from app.models.insight import Insight, InsightType
 from app.schemas.profile import ColumnProfileResponse, DatasetProfileResponse
 
 
@@ -60,3 +62,23 @@ def test_no_row_level_data_in_summary() -> None:
     dumped = summary.model_dump()
     assert "sample_rows" not in dumped
     assert "rows" not in dumped
+
+
+def test_relationship_evidence_excludes_pii_fields() -> None:
+    version_id = uuid.uuid4()
+    profile = DatasetProfileResponse(
+        dataset_version_id=version_id, row_count=10, column_count=2,
+        columns=[_column("email", True), _column("revenue", False, "numeric")],
+    )
+    insights = [
+        Insight(
+            dataset_version_id=version_id, type=InsightType.DISTRIBUTION,
+            title="Distribution", description="Computed evidence", fields=[name],
+            calculation={"median": value},
+        )
+        for name, value in [("email", "private@example.com"), ("revenue", 12)]
+    ]
+    context = build_analysis_context(profile, DataQualityReport(score=100), insights)
+    assert len(context.detected_relationships) == 1
+    assert context.detected_relationships[0].calculation == {"median": 12}
+    assert "private@example.com" not in context.model_dump_json()

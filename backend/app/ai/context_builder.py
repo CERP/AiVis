@@ -1,11 +1,8 @@
 """Builds the minimal, PII-safe payload sent to an AI provider.
 
-Never send raw rows or PII-flagged column contents. The AI only ever sees: schema (name, data
-type, cardinality, null percentage) and up to 3 representative sample values per column --
-never the full aggregate-stats blob (mean/median/std/skew/outliers/all top values) and never
-row-level data. Trimmed deliberately for prompt-size/latency: the full stats blob is still
-computed and stored by the profiler for every other consumer, only the AI payload is thinned.
-This is the boundary described in AI_ARCHITECTURE.md's data-minimization section.
+Never send raw rows or PII-flagged column contents. The AI receives schema, up to three
+representative values and bounded numeric summary statistics for non-PII columns. Statistical
+relationships include their computed evidence, excluding relationships involving PII columns.
 """
 
 from __future__ import annotations
@@ -38,6 +35,7 @@ class ColumnSummary(BaseModel):
     cardinality: int
     null_percentage: float
     sample_values: list[str] = Field(max_length=_MAX_SAMPLE_VALUES)
+    statistics: dict = Field(default_factory=dict)
 
 
 class DatasetSummary(BaseModel):
@@ -64,6 +62,11 @@ def build_dataset_summary(profile: DatasetProfileResponse) -> DatasetSummary:
                 cardinality=col.unique_count,
                 null_percentage=round(null_ratio * 100, 2),
                 sample_values=_sample_values(col.stats),
+                statistics={
+                    key: value
+                    for key, value in col.stats.items()
+                    if key in {"min", "max", "mean", "median", "std", "skew", "outliers"}
+                },
             )
         )
 
@@ -89,6 +92,7 @@ class DetectedRelationship(BaseModel):
     type: str
     fields: list[str]
     confidence: float
+    calculation: dict = Field(default_factory=dict)
 
 
 class AnalysisContext(BaseModel):
@@ -129,8 +133,12 @@ def build_analysis_context(
             for i in data_quality.issues
         ],
         detected_relationships=[
-            DetectedRelationship(type=i.type.value, fields=i.fields, confidence=i.confidence)
+            DetectedRelationship(
+                type=i.type.value, fields=i.fields, confidence=i.confidence,
+                calculation=i.calculation,
+            )
             for i in insights
+            if all(field in {column.name for column in dataset.columns} for field in i.fields)
         ],
         time_dimensions=time_dimensions,
         geographic_dimensions=geographic_dimensions,
