@@ -42,7 +42,7 @@ const TIERS: Tier[] = [
     description: "For teams turning recurring reports around fast.",
     features: [
       "Unlimited projects",
-      "Datasets up to 200MB",
+      "Datasets up to 1GB",
       "Everything in Free",
       "Shared projects & visualizations",
       "Saved brand themes",

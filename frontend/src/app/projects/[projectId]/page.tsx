@@ -161,7 +161,7 @@ export default function DatasetUploadPage() {
                 </div>
                 <p className="text-[15.5px] font-semibold">Drag a file here, or browse</p>
                 <p className="text-[13px] text-subtle-foreground">
-                  CSV, TSV, JSON, or Excel · up to 200MB
+                  CSV, TSV, JSON, or Excel · up to 1GB
                 </p>
                 <Button
                   variant="accent"

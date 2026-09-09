@@ -9,7 +9,7 @@ class Settings(BaseSettings):
     app_env: str = "development"
     app_secret_key: str = "change-me-in-production"
     cors_origins: str = "http://localhost:3000"
-    max_upload_size_mb: int = 200
+    max_upload_size_mb: int = 1024
 
     database_url: str = "postgresql+asyncpg://aivis:aivis@localhost:5432/aivis"
     redis_url: str = "redis://localhost:6379/0"

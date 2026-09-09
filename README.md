@@ -71,6 +71,9 @@ Edit the root `.env`:
 - Keep the database, Redis, and MinIO values for the supplied local infrastructure.
   Compose automatically replaces host addresses with container service names.
 
+The default upload limit is 1 GiB (1,024 MiB) per file, configured with
+`MAX_UPLOAD_SIZE_MB=1024`. Processing can require several times the file size in RAM.
+
 The API can start without a Gemini key, but AI requests will fail. The supplied
 credentials and secret placeholders are for local development only.
 
