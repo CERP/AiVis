@@ -28,6 +28,7 @@ export interface VisualizationVersion {
   spec: VisualizationSpec;
   change_summary: string | null;
   created_by: string;
+  created_at: string;
 }
 
 export interface VisualizationCommand {

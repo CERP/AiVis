@@ -111,7 +111,7 @@ export default function AnalysisPage() {
       });
     },
     onSuccess: (visualization) => {
-      router.push(`/studio/${visualization.id}`);
+      router.push(`/projects/${projectId}/visualizations/${visualization.id}`);
     },
   });
 
@@ -259,7 +259,7 @@ export default function AnalysisPage() {
               <p className="mb-2 text-[13.5px] text-muted-foreground">Build your own chart</p>
               <Button
                 variant="outline"
-                onClick={() => router.push(`/chart-gallery?datasetId=${datasetId}`)}
+                onClick={() => router.push(`/explorer?datasetId=${datasetId}`)}
               >
                 Explore charts <ArrowRight aria-hidden className="h-4 w-4" />
               </Button>

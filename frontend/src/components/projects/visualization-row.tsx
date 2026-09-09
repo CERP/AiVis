@@ -28,11 +28,17 @@ function chartTypeLabel(chartType: string | null): string {
     .join(" ");
 }
 
-export function VisualizationRow({ visualization }: { visualization: VisualizationSummary }) {
+export function VisualizationRow({
+  visualization,
+  projectId,
+}: {
+  visualization: VisualizationSummary;
+  projectId: string;
+}) {
   return (
     <li className="flex items-center gap-3.5 border-b border-border px-1 py-3.5 last:border-b-0 hover:bg-surface-muted">
       <Link
-        href={`/studio/${visualization.id}`}
+        href={`/projects/${projectId}/visualizations/${visualization.id}`}
         className="flex min-w-0 flex-1 items-center gap-3.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--focus-ring)] focus-visible:ring-offset-1"
       >
         <span

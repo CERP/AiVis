@@ -15,23 +15,26 @@ const visualization: VisualizationSummary = {
 
 describe("VisualizationRow", () => {
   it("renders the title and chart type", () => {
-    render(<VisualizationRow visualization={visualization} />);
+    render(<VisualizationRow visualization={visualization} projectId="p1" />);
     expect(screen.getByText("Revenue by region")).toBeInTheDocument();
     expect(screen.getByText(/Bar/)).toBeInTheDocument();
   });
 
   it("shows the source dataset when available", () => {
-    render(<VisualizationRow visualization={visualization} />);
+    render(<VisualizationRow visualization={visualization} projectId="p1" />);
     expect(screen.getByText(/from sales_q3.csv/)).toBeInTheDocument();
   });
 
-  it("links to the studio route for the visualization", () => {
-    render(<VisualizationRow visualization={visualization} />);
-    expect(screen.getByRole("link")).toHaveAttribute("href", "/studio/v1");
+  it("links to the nested studio route for the visualization", () => {
+    render(<VisualizationRow visualization={visualization} projectId="p1" />);
+    expect(screen.getByRole("link")).toHaveAttribute(
+      "href",
+      "/projects/p1/visualizations/v1"
+    );
   });
 
   it("falls back gracefully when chart_type is missing", () => {
-    render(<VisualizationRow visualization={{ ...visualization, chart_type: null }} />);
+    render(<VisualizationRow visualization={{ ...visualization, chart_type: null }} projectId="p1" />);
     expect(screen.getByText(/Chart ·/)).toBeInTheDocument();
   });
 });

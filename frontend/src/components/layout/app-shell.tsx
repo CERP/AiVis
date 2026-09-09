@@ -7,12 +7,9 @@ import { type ReactNode } from "react";
 import { ThemeToggle } from "./theme-toggle";
 import { UserMenu } from "./user-menu";
 
-// Chart Explorer's real /explorer route + rebuilt taxonomy ships in Batch 7. Until then the nav
-// label already reads "Chart Explorer" and points at the existing /chart-gallery implementation
-// -- swap this href to "/explorer" once that batch lands, no other change needed here.
 const NAVIGATION = [
   { href: "/projects", label: "Projects" },
-  { href: "/chart-gallery", label: "Chart Explorer" },
+  { href: "/explorer", label: "Chart Explorer" },
 ];
 
 export function AppShell({ children }: { children: ReactNode }) {

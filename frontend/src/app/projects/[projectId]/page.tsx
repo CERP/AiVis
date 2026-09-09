@@ -224,7 +224,7 @@ export default function ProjectDetailPage() {
           {visualizations && visualizations.length > 0 && (
             <ul>
               {visualizations.map((visualization) => (
-                <VisualizationRow key={visualization.id} visualization={visualization} />
+                <VisualizationRow key={visualization.id} visualization={visualization} projectId={projectId} />
               ))}
             </ul>
           )}

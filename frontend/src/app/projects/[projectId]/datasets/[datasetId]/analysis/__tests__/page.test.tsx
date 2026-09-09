@@ -185,7 +185,16 @@ describe("AnalysisPage", () => {
 
     const link = await screen.findByRole("button", { name: /Explore charts/ });
     await userEvent.click(link);
-    expect(routerPush).toHaveBeenCalledWith("/chart-gallery?datasetId=d1");
+    expect(routerPush).toHaveBeenCalledWith("/explorer?datasetId=d1");
+  });
+
+  it("Open in Studio navigates to the nested Studio route using the page's own projectId", async () => {
+    getAnalysisFindingsMock.mockResolvedValue({ items: [makeFinding("1")], offset: 0, limit: 8, total: 1, next_offset: null, has_more: false });
+    createVisualizationMock.mockResolvedValue({ id: "viz1", project_id: "p1" });
+    renderPage();
+
+    await userEvent.click(await screen.findByRole("button", { name: "Open in Studio" }));
+    expect(routerPush).toHaveBeenCalledWith("/projects/p1/visualizations/viz1");
   });
 
   it("shows the staged-processing state while analysis is still running", async () => {
