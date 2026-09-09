@@ -73,6 +73,11 @@ export default function DatasetOverviewPage() {
     : undefined;
 
   const ctaLabel = hasQualityIssues ? "Review Cleaning" : "Continue to Analysis";
+  // Messy state now has a real destination (Batch 5). Analysis doesn't yet (Batch 6), so the
+  // healthy path still temporarily lands on the old /recommend flow.
+  const ctaHref = hasQualityIssues
+    ? `/projects/${projectId}/datasets/${datasetId}/cleaning`
+    : `/datasets/${datasetId}/recommend`;
 
   return (
     <AppShell>
@@ -93,10 +98,7 @@ export default function DatasetOverviewPage() {
           piiCount={profileQuery.data?.columns.filter((c) => c.is_pii).length}
           quality={quality}
           action={
-            <Button
-              variant="accent"
-              onClick={() => router.push(`/datasets/${datasetId}/recommend`)}
-            >
+            <Button variant="accent" onClick={() => router.push(ctaHref)}>
               <Sparkles aria-hidden className="h-4 w-4" />
               {ctaLabel}
               <ArrowRight aria-hidden className="h-4 w-4" />

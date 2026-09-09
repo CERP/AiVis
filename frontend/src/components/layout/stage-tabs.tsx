@@ -9,11 +9,9 @@ export type DatasetStage = "overview" | "cleaning" | "analysis";
  * they never appear here; that distinction is what replaces PipelineStepper's 4-step model for
  * dataset-scoped pages.
  *
- * TRANSITIONAL (Batch 4): Cleaning and Analysis don't have their own routes yet -- both real
- * routes land in Batch 5/6. Rather than rendering them as dead, unclickable text (inconsistent
- * with the Overview CTA button, which already sends the user to the existing /recommend flow),
- * both tabs point at the same temporary destination as that CTA: `/datasets/{id}/recommend`.
- * Swap these two hrefs to the real nested routes once they exist -- no other change needed. */
+ * TRANSITIONAL (Batch 5): Cleaning now has its own real nested route. Analysis still doesn't --
+ * that lands in Batch 6 -- so it continues pointing at the existing /recommend flow (which still
+ * generates recommendations) until then. Swap this one remaining href once Analysis exists. */
 export function StageTabs({
   projectId,
   datasetId,
@@ -26,7 +24,7 @@ export function StageTabs({
   const recommendHref = `/datasets/${datasetId}/recommend`;
   const stages: { id: DatasetStage; label: string; href: string }[] = [
     { id: "overview", label: "Overview", href: `/projects/${projectId}/datasets/${datasetId}` },
-    { id: "cleaning", label: "Cleaning", href: recommendHref },
+    { id: "cleaning", label: "Cleaning", href: `/projects/${projectId}/datasets/${datasetId}/cleaning` },
     { id: "analysis", label: "Analysis", href: recommendHref },
   ];
 

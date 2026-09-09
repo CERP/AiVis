@@ -554,7 +554,8 @@ async def apply_validation_workflow_cleaning(
 
     try:
         version, created = await select_workflow_version(
-            session, dataset_id, payload.audit_id, payload.selection
+            session, dataset_id, payload.audit_id, payload.selection,
+            selected_step_indices=payload.selected_step_indices,
         )
     except WorkflowValidationError as exc:
         raise HTTPException(

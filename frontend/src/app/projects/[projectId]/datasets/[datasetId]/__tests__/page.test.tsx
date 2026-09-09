@@ -123,7 +123,7 @@ describe("DatasetOverviewPage", () => {
     expect(screen.getByText(/62 — Needs cleaning/)).toBeInTheDocument();
   });
 
-  it("routes the CTA to the existing /recommend flow (transitional destination)", async () => {
+  it("routes the healthy-state CTA to the still-transitional /recommend flow (Analysis isn't built yet)", async () => {
     projectGetMock.mockResolvedValue({ id: "p1", name: "Acme Q3 Sales" });
     getDatasetMock.mockResolvedValue({ id: "d1", project_id: "p1", original_filename: "sales_q3.csv" });
     getProfileMock.mockResolvedValue(baseProfile);
@@ -133,6 +133,25 @@ describe("DatasetOverviewPage", () => {
     const button = await screen.findByRole("button", { name: /Continue to Analysis/ });
     button.click();
     expect(routerPush).toHaveBeenCalledWith("/datasets/d1/recommend");
+  });
+
+  it("routes the messy-state CTA to the real nested Cleaning route", async () => {
+    projectGetMock.mockResolvedValue({ id: "p1", name: "Acme Q3 Sales" });
+    getDatasetMock.mockResolvedValue({ id: "d1", project_id: "p1", original_filename: "sales_q3.csv" });
+    getProfileMock.mockResolvedValue(baseProfile);
+    getAnalysisMock.mockResolvedValue({
+      status: "ready",
+      stages: {},
+      data_quality: {
+        score: 62,
+        issues: [{ type: "missing_values", column: "region", description: "12 missing values", severity: "medium" }],
+      },
+    });
+
+    renderPage();
+    const button = await screen.findByRole("button", { name: /Review Cleaning/ });
+    button.click();
+    expect(routerPush).toHaveBeenCalledWith("/projects/p1/datasets/d1/cleaning");
   });
 
   it("shows the loading state while the profile is fetching", () => {

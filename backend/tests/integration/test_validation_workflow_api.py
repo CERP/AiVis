@@ -118,6 +118,210 @@ async def test_audit_commit_versions_analysis_and_exports(
         )).status_code == 200
 
 
+def _two_step_audit() -> DatasetAuditReport:
+    return DatasetAuditReport(
+        dataset_status=DatasetQualityStatus.REQUIRES_CLEANING,
+        data_quality_score_before=62,
+        data_quality_score_after=94,
+        anomalies=[],
+        cleaning_recipe=[
+            DynamicTransformStep(
+                column_name="region", action_type="trim_strings", reason="Remove trailing spaces",
+            ),
+            DynamicTransformStep(
+                column_name="region", action_type="standardize_case", reason="Normalize casing",
+                params={"case": "title"},
+            ),
+        ],
+        cleaning_summary=["Trimmed and normalized region labels."],
+    )
+
+
+async def test_partial_selection_applies_only_selected_steps(
+    client: AsyncClient, session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    async def generated(*args, **kwargs):
+        return _two_step_audit()
+
+    monkeypatch.setattr(GeminiProvider, "generate_structured", generated)
+    async with client as api:
+        dataset, headers = await _upload(api)
+        audit = (await api.get(
+            f"/api/datasets/{dataset['id']}/validation-workflow", headers=headers
+        )).json()
+
+        commit = await api.post(
+            f"/api/datasets/{dataset['id']}/validation-workflow/apply",
+            json={
+                "audit_id": audit["audit_id"],
+                "selection": "cleaned",
+                "selected_step_indices": [0],
+            },
+            headers=headers,
+        )
+        assert commit.status_code == 200, commit.text
+        assert commit.json()["cleaned_version_created"] is True
+        version_id = commit.json()["dataset_version_id"]
+
+        from app.repositories.dataset import CleaningOperationRepository
+
+        operations = await CleaningOperationRepository(session).list_for_version(version_id)
+        assert len(operations) == 1
+        applied_steps = operations[0].params["steps"]
+        assert len(applied_steps) == 1
+        assert applied_steps[0]["action_type"] == "trim_strings"
+
+        # The full-recipe cache must remain untouched by a partial application.
+        audit_after = (await api.get(
+            f"/api/datasets/{dataset['id']}/validation-workflow", headers=headers
+        )).json()
+        assert audit_after["cleaned_version_id"] is None
+
+
+async def test_full_selection_still_creates_the_cached_cleaned_version(
+    client: AsyncClient, session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    async def generated(*args, **kwargs):
+        return _two_step_audit()
+
+    monkeypatch.setattr(GeminiProvider, "generate_structured", generated)
+    async with client as api:
+        dataset, headers = await _upload(api)
+        audit = (await api.get(
+            f"/api/datasets/{dataset['id']}/validation-workflow", headers=headers
+        )).json()
+
+        commit = await api.post(
+            f"/api/datasets/{dataset['id']}/validation-workflow/apply",
+            json={
+                "audit_id": audit["audit_id"],
+                "selection": "cleaned",
+                "selected_step_indices": [0, 1],
+            },
+            headers=headers,
+        )
+        assert commit.status_code == 200, commit.text
+
+        from app.repositories.dataset import CleaningOperationRepository
+
+        operations = await CleaningOperationRepository(session).list_for_version(
+            commit.json()["dataset_version_id"]
+        )
+        assert len(operations[0].params["steps"]) == 2
+
+
+async def test_empty_selection_behaves_like_reject_all(
+    client: AsyncClient, session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    async def generated(*args, **kwargs):
+        return _two_step_audit()
+
+    monkeypatch.setattr(GeminiProvider, "generate_structured", generated)
+    async with client as api:
+        dataset, headers = await _upload(api)
+        audit = (await api.get(
+            f"/api/datasets/{dataset['id']}/validation-workflow", headers=headers
+        )).json()
+
+        commit = await api.post(
+            f"/api/datasets/{dataset['id']}/validation-workflow/apply",
+            json={"audit_id": audit["audit_id"], "selection": "cleaned", "selected_step_indices": []},
+            headers=headers,
+        )
+        assert commit.status_code == 200, commit.text
+        assert commit.json()["cleaned_version_created"] is False
+
+        versions = await DatasetVersionRepository(session).list_for_dataset(dataset["id"])
+        assert len(versions) == 1  # no new version created for an empty selection
+
+
+async def test_out_of_range_step_index_is_rejected(
+    client: AsyncClient, session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    async def generated(*args, **kwargs):
+        return _two_step_audit()
+
+    monkeypatch.setattr(GeminiProvider, "generate_structured", generated)
+    async with client as api:
+        dataset, headers = await _upload(api)
+        audit = (await api.get(
+            f"/api/datasets/{dataset['id']}/validation-workflow", headers=headers
+        )).json()
+
+        commit = await api.post(
+            f"/api/datasets/{dataset['id']}/validation-workflow/apply",
+            json={
+                "audit_id": audit["audit_id"],
+                "selection": "cleaned",
+                "selected_step_indices": [5],
+            },
+            headers=headers,
+        )
+        assert commit.status_code == 422
+        assert len(await DatasetVersionRepository(session).list_for_dataset(dataset["id"])) == 1
+
+
+async def test_duplicate_step_indices_are_deduped_safely(
+    client: AsyncClient, session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    async def generated(*args, **kwargs):
+        return _two_step_audit()
+
+    monkeypatch.setattr(GeminiProvider, "generate_structured", generated)
+    async with client as api:
+        dataset, headers = await _upload(api)
+        audit = (await api.get(
+            f"/api/datasets/{dataset['id']}/validation-workflow", headers=headers
+        )).json()
+
+        commit = await api.post(
+            f"/api/datasets/{dataset['id']}/validation-workflow/apply",
+            json={
+                "audit_id": audit["audit_id"],
+                "selection": "cleaned",
+                "selected_step_indices": [0, 0, 0],
+            },
+            headers=headers,
+        )
+        assert commit.status_code == 200, commit.text
+
+        from app.repositories.dataset import CleaningOperationRepository
+
+        operations = await CleaningOperationRepository(session).list_for_version(
+            commit.json()["dataset_version_id"]
+        )
+        assert len(operations[0].params["steps"]) == 1
+
+
+async def test_omitted_selected_step_indices_keeps_full_recipe_behavior(
+    client: AsyncClient, session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Backward compatibility: a client that never sends selected_step_indices (e.g. the old
+    /recommend page's binary Accept/Reject buttons) must behave exactly as before."""
+    async def generated(*args, **kwargs):
+        return _two_step_audit()
+
+    monkeypatch.setattr(GeminiProvider, "generate_structured", generated)
+    async with client as api:
+        dataset, headers = await _upload(api)
+        audit = (await api.get(
+            f"/api/datasets/{dataset['id']}/validation-workflow", headers=headers
+        )).json()
+
+        commit = await api.post(
+            f"/api/datasets/{dataset['id']}/validation-workflow/apply",
+            json={"audit_id": audit["audit_id"], "selection": "cleaned"},
+            headers=headers,
+        )
+        assert commit.status_code == 200, commit.text
+        assert commit.json()["cleaned_version_created"] is True
+
+        audit_after = (await api.get(
+            f"/api/datasets/{dataset['id']}/validation-workflow", headers=headers
+        )).json()
+        assert audit_after["cleaned_version_id"] == commit.json()["dataset_version_id"]
+
+
 async def test_validation_rejection_does_not_create_version(
     client: AsyncClient, session: AsyncSession, monkeypatch: pytest.MonkeyPatch
 ) -> None:

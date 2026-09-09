@@ -140,11 +140,16 @@ export interface WorkflowSelectionResponse {
 export function applyValidationWorkflow(
   datasetId: string,
   auditId: string,
-  selection: "original" | "cleaned"
+  selection: "original" | "cleaned",
+  selectedStepIndices?: number[]
 ) {
   return apiClient.post<WorkflowSelectionResponse>(
     `/api/datasets/${datasetId}/validation-workflow/apply`,
-    { audit_id: auditId, selection }
+    {
+      audit_id: auditId,
+      selection,
+      ...(selectedStepIndices !== undefined && { selected_step_indices: selectedStepIndices }),
+    }
   );
 }
 

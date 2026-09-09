@@ -36,6 +36,11 @@ class ValidationWorkflowResponse(BaseModel):
 class WorkflowSelectionRequest(BaseModel):
     audit_id: uuid.UUID
     selection: Literal["original", "cleaned"]
+    # Additive, backward-compatible: omitted/null means "apply the full recipe" (current
+    # behavior, unchanged). Recipe steps have no stable id of their own, so position in
+    # `cleaning_recipe` -- which is immutable once an audit is cached -- is the contract here,
+    # not a synthetic id. Only meaningful when selection == "cleaned"; ignored for "original".
+    selected_step_indices: list[int] | None = None
 
 
 class WorkflowSelectionResponse(BaseModel):

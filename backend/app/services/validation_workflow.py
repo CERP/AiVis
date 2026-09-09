@@ -372,10 +372,17 @@ async def get_or_create_audit(
     ))
 
 
-async def _persist_cleaned_version(
-    session: AsyncSession, audit: DatasetValidationAudit, source: DatasetVersion,
-    result: ExecutionResult,
+async def _write_dataset_version(
+    session: AsyncSession, *, source: DatasetVersion, result: ExecutionResult,
+    audit_id: uuid.UUID, mark_audit_applied: DatasetValidationAudit | None,
 ) -> DatasetVersion:
+    """Writes one DatasetVersion + its columns/profiles + one CleaningOperation row recording
+    exactly the steps in `result.operations` (already scoped to whatever subset of the recipe
+    was executed -- this function doesn't know or care whether that was the full recipe or a
+    user-selected partial one). `mark_audit_applied` is only passed for the full-recipe path,
+    which is the one thing that updates the audit's cached `cleaned_version_id`/status; a
+    partial selection never touches those fields, since they specifically mean "the full-recipe
+    cleaned artifact" elsewhere in this module (see select_workflow_version)."""
     versions = await DatasetVersionRepository(session).list_for_dataset(source.dataset_id)
     next_number = max(version.version_number for version in versions) + 1
     buffer = io.BytesIO()
@@ -404,7 +411,7 @@ async def _persist_cleaned_version(
         )])
     pending.append(CleaningOperation(
         dataset_version_id=version.id, operation_type="gemini_dynamic_recipe",
-        params={"audit_id": str(audit.id), "steps": result.operations},
+        params={"audit_id": str(audit_id), "steps": result.operations},
         valid_count=result.dataframe.height, invalid_count=result.removed_rows, ai_suggested=True,
     ))
     try:
@@ -412,9 +419,10 @@ async def _persist_cleaned_version(
         # the DatasetVersion insert (there is intentionally no ORM relationship between them).
         session.add(version)
         await session.flush()
-        audit.cleaned_version_id = version.id
-        audit.status = "applied"
-        pending.append(audit)
+        if mark_audit_applied is not None:
+            mark_audit_applied.cleaned_version_id = version.id
+            mark_audit_applied.status = "applied"
+            pending.append(mark_audit_applied)
         session.add_all(pending)
         await session.commit()
         await session.refresh(version)
@@ -425,8 +433,24 @@ async def _persist_cleaned_version(
     return version
 
 
+def _resolve_selected_steps(
+    recipe: list[DynamicTransformStep], selected_step_indices: list[int]
+) -> list[DynamicTransformStep]:
+    """Validates and dedupes the requested indices, then returns the matching steps in the
+    recipe's own stable order (not request order) so execution order stays deterministic
+    regardless of how the client listed its selection."""
+    invalid = [i for i in selected_step_indices if not (0 <= i < len(recipe))]
+    if invalid:
+        raise WorkflowValidationError(
+            f"selected_step_indices out of range for a {len(recipe)}-step recipe: {invalid}"
+        )
+    unique_sorted = sorted(set(selected_step_indices))
+    return [recipe[i] for i in unique_sorted]
+
+
 async def select_workflow_version(
     session: AsyncSession, dataset_id: uuid.UUID, audit_id: uuid.UUID, selection: str,
+    selected_step_indices: list[int] | None = None,
 ) -> tuple[DatasetVersion, bool]:
     audit = await DatasetValidationAuditRepository(session).get(audit_id)
     if audit is None or audit.dataset_id != dataset_id:
@@ -435,8 +459,33 @@ async def select_workflow_version(
     if source is None or not source.is_raw:
         raise WorkflowValidationError("Audit source version is not the immutable original")
     created = False
+
     if selection == "original":
         selected = source
+    elif selection == "cleaned" and selected_step_indices is not None and len(selected_step_indices) == 0:
+        # Reject all: identical to "original" -- no partial version is created for an empty
+        # selection, so rejecting every proposed change never leaves a pointless no-op version
+        # cluttering the dataset's history.
+        selected = source
+    elif selection == "cleaned" and selected_step_indices is not None:
+        report = DatasetAuditReport.model_validate(audit.report)
+        steps = _resolve_selected_steps(report.cleaning_recipe, selected_step_indices)
+        original = await _load_dataframe(source)
+        # No `cleaned_sample` here: report.cleaned_rows is Gemini's expected result of the FULL
+        # recipe, so checking a partial subset's output against it would fail even when the
+        # partial application is entirely correct.
+        result = execute_recipe(original, steps)
+        if result.validation_errors:
+            raise WorkflowValidationError(
+                "Selected-steps integrity validation failed", result.validation_errors
+            )
+        # Deliberately does not touch audit.cleaned_version_id/status -- those fields mean
+        # "the full-recipe cleaned artifact" specifically (see the `elif selection == "cleaned"`
+        # branch below), and a partial selection is a different artifact each time it's requested.
+        selected = await _write_dataset_version(
+            session, source=source, result=result, audit_id=audit.id, mark_audit_applied=None
+        )
+        created = True
     elif selection == "cleaned":
         if audit.validation_errors:
             raise WorkflowValidationError(
@@ -455,7 +504,9 @@ async def select_workflow_version(
                 raise WorkflowValidationError(
                     "Full-dataset integrity validation failed", result.validation_errors
                 )
-            selected = await _persist_cleaned_version(session, audit, source, result)
+            selected = await _write_dataset_version(
+                session, source=source, result=result, audit_id=audit.id, mark_audit_applied=audit
+            )
             created = True
     else:
         raise WorkflowValidationError("selection must be 'original' or 'cleaned'")

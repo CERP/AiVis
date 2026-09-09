@@ -28,12 +28,16 @@ describe("StageTabs", () => {
     );
   });
 
-  it("points the transitional Cleaning/Analysis tabs at the existing /recommend flow, not a dead link", () => {
+  it("points Cleaning at the real nested route", () => {
     render(<StageTabs projectId="p1" datasetId="d1" current="overview" />);
     expect(screen.getByRole("link", { name: "Cleaning" })).toHaveAttribute(
       "href",
-      "/datasets/d1/recommend"
+      "/projects/p1/datasets/d1/cleaning"
     );
+  });
+
+  it("points the still-transitional Analysis tab at the existing /recommend flow, not a dead link", () => {
+    render(<StageTabs projectId="p1" datasetId="d1" current="overview" />);
     expect(screen.getByRole("link", { name: "Analysis" })).toHaveAttribute(
       "href",
       "/datasets/d1/recommend"
