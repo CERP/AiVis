@@ -15,8 +15,8 @@ interface CompiledSpec {
   >;
   transform?: Record<string, unknown>[];
   layer?: {
-    mark: { type: string };
-    encoding: Record<string, { field?: string; type?: string }>;
+    mark: { type: string; color?: string };
+    encoding: Record<string, { field?: string; type?: string; value?: unknown } | undefined>;
   }[];
 }
 
@@ -103,7 +103,7 @@ describe("compileToVegaLite", () => {
     expect(result.encoding.x).toBeUndefined();
   });
 
-  it("adds a reference-line layer only when the target field matches x or y", () => {
+  it("adds a reference-line rule layer, plus a text layer since the annotation has text", () => {
     const spec = baseSpec({
       annotations: [
         {
@@ -116,9 +116,34 @@ describe("compileToVegaLite", () => {
       ],
     });
     const result = compileToVegaLite(spec, []) as unknown as CompiledSpec;
+    expect(result.layer).toHaveLength(3);
+    const layer = result.layer!;
+    expect(layer[1].mark.type).toBe("rule");
+    expect(layer[1].encoding.y?.field).toBe("value");
+    expect(layer[2].mark.type).toBe("text");
+    expect(layer[2].encoding.text?.field).toBe("label");
+  });
+
+  it("adds only a rule layer, no text layer, when the reference line has no text", () => {
+    const spec = baseSpec({
+      annotations: [
+        { id: "a1", type: "reference_line", text: "", target_field: "revenue", target_value: 500 },
+      ],
+    });
+    const result = compileToVegaLite(spec, []) as unknown as CompiledSpec;
     expect(result.layer).toHaveLength(2);
     expect(result.layer?.[1].mark.type).toBe("rule");
-    expect(result.layer?.[1].encoding.y.field).toBe("value");
+  });
+
+  it("never colors a reference line with a semantic/status color -- uses neutral theme foreground", () => {
+    const spec = baseSpec({
+      annotations: [
+        { id: "a1", type: "reference_line", text: "", target_field: "revenue", target_value: 500 },
+      ],
+    });
+    const result = compileToVegaLite(spec, [], theme) as unknown as CompiledSpec;
+    expect(result.layer?.[1].mark.color).toBe(theme.foreground);
+    expect(result.layer?.[1].mark.color).not.toBe(theme.negative_color);
   });
 
   it("skips a reference-line annotation whose target field doesn't match any encoded channel", () => {
@@ -249,7 +274,7 @@ describe("new chart type compilation", () => {
 });
 
 describe("textAnnotations", () => {
-  it("excludes reference_line annotations", () => {
+  it("includes every annotation, including ones that also render on canvas -- the accessible list is a supplement, not a fallback", () => {
     const spec = baseSpec({
       annotations: [
         { id: "a1", type: "reference_line", text: "Peak", target_field: "revenue", target_value: 5 },
@@ -257,7 +282,11 @@ describe("textAnnotations", () => {
       ],
     });
     const result = textAnnotations(spec);
-    expect(result).toHaveLength(1);
-    expect(result[0].id).toBe("a2");
+    expect(result).toHaveLength(2);
+    expect(result.map((a) => a.id)).toEqual(["a1", "a2"]);
+  });
+
+  it("returns an empty list when there are no annotations", () => {
+    expect(textAnnotations(baseSpec())).toEqual([]);
   });
 });

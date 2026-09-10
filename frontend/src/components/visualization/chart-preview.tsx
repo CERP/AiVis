@@ -16,9 +16,7 @@ const CHART_TYPE_GLYPH: Record<string, string> = {
   pie: "◔",
 };
 
-/** Chrome-suppressed chart render shared by Analysis findings and (eventually) Chart Explorer
- * cards -- extracted from RecommendationCard's preview block rather than duplicated, and
- * RecommendationCard itself is left untouched since /recommend still depends on it as-is.
+/** Chrome-suppressed chart render shared by Analysis findings and Chart Explorer cards.
  * Renders a text glyph instead of a real chart when no preview rows are available yet, and
  * never throws past its own boundary -- a broken spec degrades this one preview, not the row
  * or page around it (VisualizationRenderer already swallows its own render errors internally). */

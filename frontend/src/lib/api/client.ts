@@ -12,6 +12,20 @@ export class ApiError extends Error {
   }
 }
 
+/** FastAPI sends a plain string for HTTPException detail, but a Pydantic validation
+ * error (422) sends an array of {loc, msg, ...} objects instead -- rendering that array
+ * directly as JSX previously crashed the page with "Objects are not valid as a React
+ * child" whenever a form submission failed validation. */
+function normalizeErrorDetail(detail: unknown): string | undefined {
+  if (typeof detail === "string") return detail;
+  if (Array.isArray(detail)) {
+    return detail
+      .map((item) => (item && typeof item === "object" && "msg" in item ? String(item.msg) : String(item)))
+      .join(" ");
+  }
+  return undefined;
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const token = useAuthStore.getState().token;
   const headers = new Headers(init?.headers);
@@ -26,7 +40,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     let detail = response.statusText;
     try {
       const body = await response.json();
-      detail = body.detail ?? detail;
+      detail = normalizeErrorDetail(body.detail) ?? detail;
     } catch {
       // response wasn't JSON -- keep statusText
     }

@@ -47,7 +47,7 @@ export function Tabs({
             {isActive && (
               <motion.span
                 layoutId={layoutId}
-                className="absolute inset-0 -z-10 rounded-[var(--radius-token)] bg-surface shadow-sm"
+                className="absolute inset-0 -z-10 rounded-[var(--radius-token)] bg-surface"
                 transition={{ type: "spring", stiffness: 400, damping: 32 }}
               />
             )}

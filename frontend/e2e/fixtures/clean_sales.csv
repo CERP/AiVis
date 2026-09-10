@@ -1,0 +1,13 @@
+region,product,revenue,units,quarter
+North,Widget,1000,50,Q1
+South,Widget,1200,60,Q1
+East,Gadget,900,40,Q1
+West,Gadget,1500,70,Q1
+North,Widget,1100,55,Q2
+South,Widget,1300,62,Q2
+East,Gadget,950,42,Q2
+West,Gadget,1600,75,Q2
+North,Widget,1050,52,Q3
+South,Widget,1250,61,Q3
+East,Gadget,920,41,Q3
+West,Gadget,1550,72,Q3

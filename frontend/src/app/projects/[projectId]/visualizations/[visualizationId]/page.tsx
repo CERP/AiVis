@@ -30,6 +30,7 @@ import {
   type VisualizationCommand,
 } from "@/lib/api/visualizations";
 import { exportPng, exportSvg } from "@/lib/visualization/export";
+import { getChartDefinition } from "@/lib/visualization/registry";
 import { textAnnotations } from "@/lib/visualization/to-vega-lite";
 import { relativeTime } from "@/lib/format";
 import type { AnnotationType } from "@/lib/visualization/spec";
@@ -292,6 +293,12 @@ export default function StudioPage() {
                     setViewReady(!!view);
                   }}
                 />
+                {currentVersion.spec.annotations.length > 0 &&
+                  getChartDefinition(currentVersion.spec.chart_type)?.renderer !== "vega-lite" && (
+                    <p className="mt-2 text-[12px] text-subtle-foreground">
+                      On-chart annotation display isn&apos;t available for this chart type yet.
+                    </p>
+                  )}
                 <AnnotationList annotations={textAnnotations(currentVersion.spec)} />
               </motion.div>
             )}
@@ -407,10 +414,15 @@ export default function StudioPage() {
                   value={annotationDraft.text}
                   onChange={(e) => setAnnotationDraft((d) => ({ ...d, text: e.target.value }))}
                 />
-                {annotationDraft.type === "reference_line" && (
+                {(["reference_line", "callout", "label"] as AnnotationType[]).includes(annotationDraft.type) && (
                   <>
+                    <p className="text-[11px] text-subtle-foreground">
+                      {annotationDraft.type === "reference_line"
+                        ? "Anchors the line to a fixed value on one axis."
+                        : "Anchors this note to a specific data value -- the chart's own data supplies the other axis."}
+                    </p>
                     <select
-                      aria-label="Reference line target field"
+                      aria-label="Annotation target field"
                       className="h-8 rounded-[var(--radius-sm-token)] border border-border-strong bg-surface px-2 text-[12px]"
                       value={annotationDraft.targetField}
                       onChange={(e) => setAnnotationDraft((d) => ({ ...d, targetField: e.target.value }))}
@@ -428,7 +440,7 @@ export default function StudioPage() {
                       )}
                     </select>
                     <input
-                      aria-label="Reference line target value"
+                      aria-label="Annotation target value"
                       className="h-8 rounded-[var(--radius-sm-token)] border border-border-strong bg-surface px-2 text-[12px]"
                       placeholder="Target value"
                       value={annotationDraft.targetValue}

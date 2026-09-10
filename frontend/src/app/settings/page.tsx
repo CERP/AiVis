@@ -8,7 +8,7 @@ import { AppShell } from "@/components/layout/app-shell";
 import { PasswordSettings } from "@/components/layout/password-settings";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { ProcessingState } from "@/components/ui/states";
+import { ErrorState, ProcessingState } from "@/components/ui/states";
 import { me, updateProfile } from "@/lib/api/auth";
 import { useThemeStore } from "@/store/theme-store";
 import { useAuthStore } from "@/store/auth-store";
@@ -33,10 +33,15 @@ export default function SettingsPage() {
         </nav>
 
         {userQuery.isLoading && <ProcessingState label="Loading account…" />}
-        {userQuery.isError && <div role="alert"><p className="mb-3 text-negative">Couldn&apos;t load your profile.</p><Button variant="outline" onClick={() => userQuery.refetch()}>Try again</Button></div>}
+        {userQuery.isError && (
+          <ErrorState
+            description="Couldn't load your profile."
+            action={<Button variant="outline" onClick={() => userQuery.refetch()}>Try again</Button>}
+          />
+        )}
 
         {userQuery.data && (
-          <Card id="profile" className="scroll-mt-24 rounded-2xl">
+          <Card id="profile" className="scroll-mt-24">
             <CardHeader>
               <CardTitle className="text-lg">Personal profile</CardTitle>
               <p className="text-sm text-muted-foreground">Your name appears in the account menu throughout AiVis.</p>
@@ -58,14 +63,14 @@ export default function SettingsPage() {
           </Card>
         )}
 
-        <Card id="appearance" className="scroll-mt-24 rounded-2xl">
+        <Card id="appearance" className="scroll-mt-24">
           <CardHeader><CardTitle className="text-lg">Appearance</CardTitle><p className="text-sm text-muted-foreground">Choose a theme. Your preference is saved automatically in this browser.</p></CardHeader>
           <CardContent className="grid grid-cols-2 gap-4">
-            {(["light", "dark"] as const).map((option) => <button key={option} aria-pressed={theme === option} onClick={() => { if (theme !== option) toggleTheme(); }} className={`rounded-xl border-2 p-4 text-left focus-visible:outline-2 focus-visible:outline-accent ${theme === option ? "border-accent bg-accent-muted" : "border-border"}`}><div aria-hidden className={`mb-3 h-20 rounded-lg p-3 ${option === "light" ? "bg-[#eef0f5]" : "bg-[#0b0c10]"}`}><div className="mb-2 h-2 w-2/3 rounded bg-[#7257e8]" /><div className={`h-9 rounded ${option === "light" ? "bg-white" : "bg-[#252735]"}`} /></div><span className="text-sm font-medium">{option === "light" ? "Light" : "Dark"}{theme === option ? " · Selected" : ""}</span></button>)}
+            {(["light", "dark"] as const).map((option) => <button key={option} aria-pressed={theme === option} onClick={() => { if (theme !== option) toggleTheme(); }} className={`rounded-[var(--radius-token)] border-2 p-4 text-left focus-visible:outline-2 focus-visible:outline-accent ${theme === option ? "border-accent bg-accent-muted" : "border-border"}`}><div aria-hidden className={`mb-3 h-20 rounded-[var(--radius-sm-token)] p-3 ${option === "light" ? "bg-[#eef0f5]" : "bg-[#0b0c10]"}`}><div className="mb-2 h-2 w-2/3 rounded-[var(--radius-sm-token)] bg-[#7257e8]" /><div className={`h-9 rounded-[var(--radius-sm-token)] ${option === "light" ? "bg-white" : "bg-[#252735]"}`} /></div><span className="text-sm font-medium">{option === "light" ? "Light" : "Dark"}{theme === option ? " · Selected" : ""}</span></button>)}
           </CardContent>
         </Card>
         <PasswordSettings />
-        <Card id="session" className="scroll-mt-24 rounded-2xl">
+        <Card id="session" className="scroll-mt-24">
           <CardHeader>
             <CardTitle className="text-base">Session</CardTitle>
             <p className="text-sm text-muted-foreground">Sign out of AiVis in this browser.</p>

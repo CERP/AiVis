@@ -20,8 +20,17 @@ vi.mock("@/components/visualization/filter-toolbar", () => ({
   FilterToolbar: () => <div data-testid="filter-toolbar">filters</div>,
 }));
 
+// Renders enough of the real prop shape to prove integration (which annotations were passed
+// through) without re-testing AnnotationList's own text formatting -- that's covered by its
+// dedicated unit tests in annotation-list.test.tsx.
 vi.mock("@/components/visualization/annotation-list", () => ({
-  AnnotationList: () => <div data-testid="annotation-list">annotations</div>,
+  AnnotationList: ({ annotations }: { annotations: { id: string; text: string }[] }) => (
+    <div data-testid="annotation-list">
+      {annotations.map((a) => (
+        <span key={a.id}>{a.text}</span>
+      ))}
+    </div>
+  ),
 }));
 
 vi.mock("@/lib/visualization/export", () => ({
@@ -200,6 +209,83 @@ describe("StudioPage (nested)", () => {
       "viz1",
       expect.objectContaining({ type: "add_annotation", params: expect.objectContaining({ text: "Peak season" }) })
     );
+  });
+
+  it("an existing (pre-saved) annotation appears in both the Notes tab list and the accessible AnnotationList below the canvas", async () => {
+    listVersionsMock.mockResolvedValue([
+      {
+        ...versions[0],
+        spec: baseSpec({
+          annotations: [{ id: "ann1", type: "reference_line", text: "Target", target_field: "revenue", target_value: 500 }],
+        }),
+      },
+    ]);
+    renderPage();
+    await screen.findByText("Revenue by region");
+    await waitFor(() => expect(screen.getByTestId("annotation-list").textContent).not.toBe(""));
+
+    // Accessible list (mocked to render passed-through text; exact "field = value" formatting
+    // is covered by annotation-list.test.tsx's own unit tests) -- proves the annotation reaches
+    // AnnotationList regardless of which inspector tab is open.
+    expect(await within(screen.getByTestId("annotation-list")).findByText("Target")).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("tab", { name: "Notes" }));
+    expect(screen.getByText(/reference line:/)).toBeInTheDocument();
+  });
+
+  it("lets the user anchor a callout/label annotation to a data value, not just reference_line", async () => {
+    renderPage();
+    await screen.findByText("Revenue by region");
+    await userEvent.click(screen.getByRole("tab", { name: "Notes" }));
+
+    await userEvent.selectOptions(screen.getByLabelText("New annotation type"), "callout");
+    expect(screen.getByLabelText("Annotation target field")).toBeInTheDocument();
+    await userEvent.selectOptions(screen.getByLabelText("Annotation target field"), "region");
+    await userEvent.type(screen.getByLabelText("Annotation target value"), "North");
+    await userEvent.type(screen.getByLabelText("New annotation text"), "Best region");
+    await userEvent.click(screen.getByRole("button", { name: "Add annotation" }));
+
+    expect(applyCommandMock).toHaveBeenCalledWith("viz1", {
+      type: "add_annotation",
+      params: expect.objectContaining({ type: "callout", target_field: "region", target_value: "North", text: "Best region" }),
+    });
+  });
+
+  it("remove still works for an existing annotation via the existing remove_annotation command", async () => {
+    listVersionsMock.mockResolvedValue([
+      {
+        ...versions[0],
+        spec: baseSpec({ annotations: [{ id: "ann1", type: "label", text: "Note" }] }),
+      },
+    ]);
+    renderPage();
+    await screen.findByText("Revenue by region");
+    await userEvent.click(screen.getByRole("tab", { name: "Notes" }));
+    await userEvent.click(screen.getByRole("button", { name: /Remove label annotation/ }));
+    expect(applyCommandMock).toHaveBeenCalledWith("viz1", { type: "remove_annotation", params: { id: "ann1" } });
+  });
+
+  it("shows the restrained non-Vega note instead of pretending annotations render on canvas for a non-Vega chart type", async () => {
+    listVersionsMock.mockResolvedValue([
+      {
+        ...versions[0],
+        spec: baseSpec({
+          chart_type: "kpi",
+          encoding: { size: { field: "revenue", type: "quantitative" } },
+          annotations: [{ id: "ann1", type: "label", text: "Note" }],
+        }),
+      },
+    ]);
+    renderPage();
+    await screen.findByText("Revenue by region");
+    expect(await screen.findByText(/isn't available for this chart type yet/)).toBeInTheDocument();
+  });
+
+  it("does not show the non-Vega note when there are no annotations at all", async () => {
+    listVersionsMock.mockResolvedValue([{ ...versions[0], spec: baseSpec({ chart_type: "kpi" }) }]);
+    renderPage();
+    await screen.findByText("Revenue by region");
+    expect(screen.queryByText(/isn't available for this chart type yet/)).not.toBeInTheDocument();
   });
 
   it("regression: Theme tab still applies themes via the existing command", async () => {

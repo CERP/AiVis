@@ -72,7 +72,7 @@ export function KPICard({ spec, rows }: KPICardProps) {
     <div
       role="img"
       aria-label={`${spec.typography.title ?? metricField}: ${formattedValue}${changePct !== null ? `, ${changePct >= 0 ? "up" : "down"} ${Math.abs(changePct).toFixed(1)} percent` : ""}`}
-      className="flex flex-col gap-1 rounded-[var(--radius-token)] border border-border bg-surface p-6 shadow-sm"
+      className="flex flex-col gap-1 rounded-[var(--radius-token)] border border-border bg-surface p-6"
     >
       <span className="text-xs uppercase tracking-wide text-muted-foreground">
         {spec.typography.title ?? metricField}

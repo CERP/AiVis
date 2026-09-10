@@ -19,11 +19,22 @@ export function ChartCard({
   const preview = CHART_PREVIEW_SPECS[def.id];
 
   return (
-    <button
-      type="button"
+    // A real <button> here would nest ChartPreview's live-rendered charts (some chart types,
+    // e.g. hierarchy trees, render their own interactive <button> rows) inside another
+    // <button> -- invalid HTML that also breaks the true nested control's focus/click. `div` +
+    // role="button" is the same pattern the upload dropzone uses for the same reason.
+    <div
+      role="button"
+      tabIndex={0}
       aria-pressed={!!selected}
       onClick={onSelect}
-      className={`flex flex-col overflow-hidden rounded-[var(--radius-md-token)] border text-left transition-colors ${
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          onSelect();
+        }
+      }}
+      className={`flex cursor-pointer flex-col overflow-hidden rounded-[var(--radius-md-token)] border text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--focus-ring)] ${
         selected ? "border-accent" : "border-border hover:border-border-strong"
       }`}
     >
@@ -42,6 +53,6 @@ export function ChartCard({
           {def.subcategory.replaceAll("_", " ")}
         </p>
       </div>
-    </button>
+    </div>
   );
 }
