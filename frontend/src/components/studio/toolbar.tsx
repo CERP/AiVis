@@ -37,14 +37,15 @@ export function StudioToolbar({
   const recentVersions = versions.slice(-10).reverse();
 
   return (
-    <header className="flex h-12 shrink-0 items-center justify-between border-b border-border bg-surface px-4 sm:px-6">
+    <header className="flex h-auto min-h-12 shrink-0 flex-wrap items-center justify-between gap-y-1.5 border-b border-border bg-surface px-4 py-1.5 sm:h-12 sm:flex-nowrap sm:py-0 sm:px-6">
       <div className="flex min-w-0 items-center gap-4">
         <Link
           href={backHref}
+          aria-label="Back to Analysis"
           className="flex shrink-0 items-center gap-1 text-[13px] text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--focus-ring)] focus-visible:ring-offset-1"
         >
           <ArrowLeft aria-hidden className="h-3.5 w-3.5" />
-          Back to Analysis
+          <span className="hidden sm:inline">Back to Analysis</span>
         </Link>
         <Breadcrumb items={breadcrumbItems} className="min-w-0" />
       </div>

@@ -9,7 +9,10 @@
   --border: #e7e8ef;
   --border-strong: #d4d6e0;
   --muted-foreground: #5b5d6b;
-  --subtle-foreground: #8b8d99;
+  /* #8b8d99 measured 3.05:1 against --background and 3.3:1 against --surface -- below the
+     4.5:1 WCAG AA floor for the small (11-13px) body text this token is used for everywhere.
+     Darkened to the nearest step that clears both surfaces (same hue). */
+  --subtle-foreground: #6c6e7a;
   --accent: #7257e8;
   --accent-hover: #6045d5;
   --accent-foreground: #ffffff;
@@ -20,7 +23,9 @@
   --positive-bg: #e9f7f5;
   --positive-accent: #0f9b8e;
   --negative: #b5432a;
-  --warning: #b7791f;
+  /* #b7791f measured 3.25-3.64:1 as text color -- below WCAG AA. Darkened; --warning-bg / the
+     dot-indicator usages weren't affected since this token is only the text color here. */
+  --warning: #8f5f18;
   --info: #2f87d6;
   --info-bg: #e7f0fa;
   --secondary: #e2703a;

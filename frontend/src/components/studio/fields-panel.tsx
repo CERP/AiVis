@@ -101,6 +101,7 @@ export function FieldsPanel({
                 <span className="truncate text-foreground">{column.name}</span>
                 {isMapped && (
                   <span
+                    role="img"
                     aria-label={`${column.name} is currently mapped`}
                     title="Currently mapped"
                     className={cn("ml-auto h-1.5 w-1.5 shrink-0 rounded-full bg-accent")}

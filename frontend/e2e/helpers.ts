@@ -13,7 +13,9 @@ export async function signUp(page: Page, label: string) {
 }
 
 export async function createProject(page: Page, name: string) {
-  await page.getByRole("button", { name: "New project" }).click();
+  // Both the header button and the empty-state CTA render "New project" when the account has
+  // zero projects -- not a bug, just two entry points to the same action.
+  await page.getByRole("button", { name: "New project" }).first().click();
   await page.getByLabel("Project name").fill(name);
   await page.getByRole("button", { name: "Create project" }).click();
   await page.getByRole("link", { name: new RegExp(name) }).click();

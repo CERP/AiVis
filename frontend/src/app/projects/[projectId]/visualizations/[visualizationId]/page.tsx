@@ -235,11 +235,16 @@ export default function StudioPage() {
         )}
       </AnimatePresence>
 
-      <div className="flex min-h-0 flex-1">
+      <div className="flex min-h-0 flex-1 flex-col lg:flex-row">
         {/* Mobile-only toggles: below lg the left/right panels are bottom sheets rather than
           * always-visible columns -- Studio degrades to preview + one-panel-at-a-time editing,
-          * per the explicit "don't pretend the full 3-panel editor fits on mobile" instruction. */}
-        <div className="flex items-center gap-2 border-b border-border p-2 lg:hidden">
+          * per the explicit "don't pretend the full 3-panel editor fits on mobile" instruction.
+          * This row must stack above `main` (not sit beside it) below `lg`, since the parent is
+          * a row flex container on desktop for the 3-column layout -- without `flex-col` here,
+          * the toggle row shared the row with `main` instead of sitting above it, which pushed
+          * these buttons to an unpredictable vertical position that ended up under the fields
+          * bottom sheet once opened. */}
+        <div className="flex shrink-0 items-center gap-2 border-b border-border p-2 lg:hidden">
           <Button variant="outline" size="sm" onClick={() => setFieldsOpen((v) => !v)}>
             Fields {fieldsOpen ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
           </Button>

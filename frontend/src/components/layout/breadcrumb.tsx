@@ -19,7 +19,7 @@ function Segment({ item, isLast }: { item: BreadcrumbItem; isLast: boolean }) {
   return (
     <span
       aria-current={isLast ? "page" : undefined}
-      className="max-w-[200px] truncate font-medium text-foreground sm:max-w-[320px]"
+      className="max-w-[120px] truncate font-medium text-foreground sm:max-w-[200px] lg:max-w-[320px]"
     >
       {item.label}
     </span>
@@ -40,8 +40,8 @@ export function Breadcrumb({ items, className }: { items: BreadcrumbItem[]; clas
 
   return (
     <nav aria-label="Breadcrumb" className={className}>
-      <ol className="flex items-center gap-1.5 text-[13px]">
-        <li className="flex items-center">
+      <ol className="flex min-w-0 items-center gap-1.5 text-[13px]">
+        <li className="flex min-w-0 items-center">
           <Segment item={items[0]} isLast={lastIndex === 0} />
         </li>
 
@@ -63,7 +63,7 @@ export function Breadcrumb({ items, className }: { items: BreadcrumbItem[]; clas
         )}
 
         {lastIndex > 0 && (
-          <li className="flex items-center gap-1.5">
+          <li className="flex min-w-0 items-center gap-1.5">
             <span aria-hidden className="text-subtle-foreground">
               /
             </span>
